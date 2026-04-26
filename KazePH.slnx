@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="KazePH.Admin/KazePH.Admin.csproj" />
+  <Project Path="KazePH.Application/KazePH.Application.csproj" />
+  <Project Path="KazePH.Core/KazePH.Core.csproj" />
+  <Project Path="KazePH.Infrastructure/KazePH.Infrastructure.csproj" />
+  <Project Path="KazePH.Web/KazePH.Web.csproj" />
+</Solution>
