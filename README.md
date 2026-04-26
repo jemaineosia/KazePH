@@ -13,6 +13,7 @@
   - [Registration & Phone Verification](#registration--phone-verification)
   - [Wallet – Top-Up (Deposit)](#wallet--top-up-deposit)
   - [Wallet – Withdrawal](#wallet--withdrawal)
+- [Payment Methods](#payment-methods)
 - [Betting Modes](#betting-modes)
   - [1v1 Betting](#1v1-betting)
   - [Pool / Parimutuel Betting](#pool--parimutuel-betting)
@@ -60,7 +61,7 @@ Kaze provides a safe environment for users who want to bet against each other wi
 
 - 📱 Mobile-ready PWA with push notifications
 - 📞 Phone number registration with OTP verification
-- 💰 Manual top-up via GCash / Bank with receipt submission
+- 💰 Top-up via GCash, Bank, or PayPal with receipt submission
 - 🔒 Escrow wallet — funds are locked once a bet is accepted
 - ⚔️ 1v1 betting with invitation codes
 - 🏆 Pool / Parimutuel betting with proportional payouts
@@ -69,7 +70,7 @@ Kaze provides a safe environment for users who want to bet against each other wi
 - 🏅 Ranking / tier system
 - ⚖️ Admin-managed dispute resolution
 - 🛡️ Strike and punishment system for dishonest players
-- 💸 Withdrawal to GCash or Bank (admin-processed)
+- 💸 Withdrawal to GCash, Bank, or PayPal (admin-processed)
 - 🛠️ Full admin panel for deposits, withdrawals, disputes, and user management
 
 ---
@@ -82,21 +83,23 @@ Kaze provides a safe environment for users who want to bet against each other wi
 2. OTP is sent via SMS (Twilio / Semaphore)
 3. User verifies OTP to activate account
 4. User completes profile: username, avatar
-5. User adds GCash / Bank details (used for withdrawals)
+5. User adds GCash / Bank / PayPal details (used for withdrawals)
 
 ---
 
 ### Wallet – Top-Up (Deposit)
 
 1. User navigates to the **Top-Up** page
-2. Platform displays the official GCash number and Bank account details
-3. User manually sends money via GCash or Bank transfer
-4. User submits a top-up request:
-   - Amount
+2. User selects their preferred payment method: **GCash**, **Bank**, or **PayPal**
+3. Platform displays the corresponding account details for the selected method
+4. User manually sends money via the chosen method
+5. User submits a top-up request:
+   - Amount sent
    - Screenshot / receipt (uploaded to Supabase Storage)
-5. Admin reviews the submission
-6. Admin **approves** → balance is credited to the user's wallet
-7. Admin **rejects** → user is notified with a reason
+   - Payment method used
+6. Admin reviews the submission
+7. Admin **approves** → balance is credited to the user's wallet (after PayPal fee deduction if applicable)
+8. Admin **rejects** → user is notified with a reason
 
 **Wallet States:**
 
@@ -113,12 +116,49 @@ Kaze provides a safe environment for users who want to bet against each other wi
 1. User requests a withdrawal
 2. User enters:
    - Amount (must meet minimum set in config)
-   - Destination: GCash or Bank (pre-saved from profile)
-3. Withdrawal fee is automatically deducted (set in config, e.g., flat or percentage)
+   - Destination: **GCash**, **Bank**, or **PayPal** (pre-saved from profile)
+3. Applicable withdrawal fee is automatically deducted based on the chosen method (set in config)
 4. Admin receives a notification
 5. Admin processes the transfer manually
 6. Admin uploads the receipt and confirms the withdrawal
 7. User is notified that the withdrawal is complete
+
+---
+
+## Payment Methods
+
+Kaze supports three payment channels for both cash-in (top-up) and cash-out (withdrawal). Each method has its own fee configuration.
+
+| Method | Cash-In | Cash-Out | Extra Fee | Notes |
+|---|---|---|---|---|
+| **GCash** | ✅ | ✅ | None (standard platform fee only) | Most common for PH users |
+| **Bank Transfer** | ✅ | ✅ | None (standard platform fee only) | Instapay / PESONet |
+| **PayPal** | ✅ | ✅ | ✅ Yes — PayPal fee passed to user | Fee covers PayPal's transaction charges |
+
+### PayPal Fee Handling
+
+PayPal charges transaction fees on money transfers. To cover this, Kaze adds an **extra fee** on top of the standard platform fee when a user chooses PayPal.
+
+**Cash-In via PayPal:**
+- User sends the amount to the platform's PayPal account
+- Admin receives the amount minus PayPal's fee
+- Only the **net amount received** (after PayPal deduction) is credited to the user's wallet
+- The user is informed of this before submitting
+
+**Cash-Out via PayPal:**
+- The standard withdrawal fee **plus** the PayPal extra fee are deducted from the user's wallet
+- The user sees the exact amount they will receive before confirming
+- Admin sends the net amount via PayPal
+
+**Fee Config Example:**
+
+| Setting | GCash / Bank | PayPal |
+|---|---|---|
+| Standard withdrawal fee | ₱10 flat or 2% | ₱10 flat or 2% |
+| PayPal extra fee | — | Configurable (e.g., 4.4% + ₱15 fixed) |
+| Total deducted | Standard fee only | Standard fee + PayPal extra fee |
+
+> 💡 The PayPal extra fee values in config should reflect PayPal's current fee structure for the platform's account type and region. Admin can update these in the Config panel.
 
 ---
 
@@ -273,12 +313,12 @@ Push and in-app notifications are sent for:
 
 | Module | Capabilities |
 |---|---|
-| **Deposit Management** | View pending receipts, approve or reject with notes |
+| **Deposit Management** | View pending receipts (GCash / Bank / PayPal), approve or reject with notes |
 | **Withdrawal Management** | View requests, confirm transfer, upload receipt |
 | **Dispute Management** | View both sides' evidence, declare winner, issue punishments |
 | **User Management** | View all users, issue strikes, suspend or ban accounts |
 | **Event Monitoring** | View all active and completed events (1v1 and Pool) |
-| **Platform Config** | Manage fees, minimums, GCash/Bank display info |
+| **Platform Config** | Manage fees, minimums, payment method account details |
 
 ---
 
@@ -289,10 +329,13 @@ Managed by admin via the Config/Settings panel:
 | Setting | Description |
 |---|---|
 | `MinWithdrawalAmount` | Minimum amount a user can withdraw (e.g., ₱100) |
-| `WithdrawalFee` | Fee per withdrawal — flat (e.g., ₱10) or percentage (e.g., 2%) |
+| `WithdrawalFee` | Standard fee per withdrawal — flat (e.g., ₱10) or percentage (e.g., 2%) |
+| `PayPalExtraFeePercent` | Extra percentage fee added for PayPal transactions (e.g., 4.4%) |
+| `PayPalExtraFeeFixed` | Extra fixed fee added for PayPal transactions (e.g., ₱15) |
 | `PlatformGCash` | GCash number displayed on the top-up page |
 | `PlatformBankName` | Bank name displayed on the top-up page |
 | `PlatformBankAccount` | Bank account number displayed on the top-up page |
+| `PlatformPayPal` | PayPal email/account displayed on the top-up page |
 | `DisputeWindowHours` | Hours participants have to contest a Pool result (default: 24) |
 | `EvidenceSubmissionHours` | Hours each party has to submit dispute evidence |
 
@@ -336,13 +379,14 @@ Planned development order:
 
 1. **Auth & Verification** — Register, Login, OTP, Phone Verification
 2. **Wallet** — Balance display, Top-up submission, Withdrawal request
-3. **Events – 1v1** — Create, Invite, Accept, Cancel, Vote, Dispute trigger
-4. **Events – Pool** — Create, Join, Result submission, Dispute trigger
-5. **Dispute System** — Evidence upload, Admin resolution, Punishment
-6. **Social** — Friends, Chat, Notifications
-7. **Ranking** — Calculation engine, Display, Tier progression
-8. **Admin Panel** — All admin capabilities
-9. **Config / Settings** — Fee management, Platform payment info
+3. **Payment Methods** — GCash, Bank, PayPal with fee logic
+4. **Events – 1v1** — Create, Invite, Accept, Cancel, Vote, Dispute trigger
+5. **Events – Pool** — Create, Join, Result submission, Dispute trigger
+6. **Dispute System** — Evidence upload, Admin resolution, Punishment
+7. **Social** — Friends, Chat, Notifications
+8. **Ranking** — Calculation engine, Display, Tier progression
+9. **Admin Panel** — All admin capabilities
+10. **Config / Settings** — Fee management, Platform payment info
 
 ---
 
@@ -350,13 +394,15 @@ Planned development order:
 
 > ⚠️ **Legal**: Online betting platforms in the Philippines may require a **PAGCOR license**. Consult a legal professional before launching publicly.
 
-> 💱 **Currency**: The platform operates in **Philippine Peso (PHP / ₱)**.
+> 💱 **Currency**: The platform operates in **Philippine Peso (PHP / ₱)**. PayPal transactions may involve currency conversion if the sender's PayPal is in a different currency — this should be communicated clearly to the user.
 
 > 🕗 **Timezone**: All event dates and times are handled in **Philippine Standard Time (PST, UTC+8)**.
 
-> 📄 **Receipts**: Only accept receipts from official GCash or bank transfer confirmations to reduce fraud risk.
+> 📄 **Receipts**: Only accept receipts from official GCash, bank transfer, or PayPal transaction confirmations to reduce fraud risk.
 
 > 🔒 **Escrow Integrity**: Funds are locked immediately upon bet acceptance and cannot be withdrawn until the event is resolved or mutually cancelled.
+
+> 💳 **PayPal Fees**: PayPal fees are subject to change. Admin should review and update `PayPalExtraFeePercent` and `PayPalExtraFeeFixed` in the config panel whenever PayPal updates its pricing.
 
 ---
 
