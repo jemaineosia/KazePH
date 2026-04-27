@@ -35,7 +35,7 @@ builder.Services.AddScoped<IPlatformConfigService, PlatformConfigService>();
 // ── Blazor + SignalR ─────────────────────────────────────────────────────────
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddSignalR();
 
 var app = builder.Build();
@@ -56,6 +56,12 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapPost("/logout", async (SignInManager<ApplicationUser> signInManager) =>
+{
+    await signInManager.SignOutAsync();
+    return Results.Redirect("/");
+}).RequireAuthorization();
 
 // ── SignalR Hubs ──────────────────────────────────────────────────────────────
 app.MapHub<ChatHub>("/hubs/chat");

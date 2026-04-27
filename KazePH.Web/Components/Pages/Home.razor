@@ -1,6 +1,87 @@
 @page "/"
+@inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Home – KazePH</PageTitle>
+<PageTitle>KazePH – Secure P2P Betting</PageTitle>
 
-<h1>Welcome to KazePH</h1>
-<p>A secure peer-to-peer betting escrow platform. <a href="/login">Login</a> or <a href="/register">Register</a> to get started.</p>
+<AuthorizeView>
+    <Authorized>
+        <div class="text-center py-4">
+            <h4 class="fw-bold mb-1">Welcome back, <span class="text-danger">@_username</span>!</h4>
+            <p class="text-muted mb-4">What would you like to do today?</p>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-6 col-md-3">
+                <a href="/events" class="card text-center p-3 text-decoration-none d-block">
+                    <div class="text-danger fs-2 mb-1"><i class="bi bi-calendar-event-fill"></i></div>
+                    <div class="small fw-semibold">Events</div>
+                </a>
+            </div>
+            <div class="col-6 col-md-3">
+                <a href="/wallet" class="card text-center p-3 text-decoration-none d-block">
+                    <div class="text-danger fs-2 mb-1"><i class="bi bi-wallet2"></i></div>
+                    <div class="small fw-semibold">Wallet</div>
+                </a>
+            </div>
+            <div class="col-6 col-md-3">
+                <a href="/rankings" class="card text-center p-3 text-decoration-none d-block">
+                    <div class="text-danger fs-2 mb-1"><i class="bi bi-trophy-fill"></i></div>
+                    <div class="small fw-semibold">Rankings</div>
+                </a>
+            </div>
+            <div class="col-6 col-md-3">
+                <a href="/profile" class="card text-center p-3 text-decoration-none d-block">
+                    <div class="text-danger fs-2 mb-1"><i class="bi bi-person-circle"></i></div>
+                    <div class="small fw-semibold">Profile</div>
+                </a>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="text-center py-5">
+            <h1 class="fw-bold mb-2">
+                <span class="text-danger">Kaze</span>PH
+            </h1>
+            <p class="text-muted mb-4">Secure peer-to-peer betting escrow for the Philippines.</p>
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+                <a href="/register" class="btn btn-primary px-4 py-2 fw-semibold">Get Started</a>
+                <a href="/login" class="btn btn-outline-light px-4 py-2">Sign In</a>
+            </div>
+        </div>
+
+        <div class="row g-3 mt-2">
+            <div class="col-12 col-md-4">
+                <div class="card h-100 p-3">
+                    <div class="text-danger fs-2 mb-2"><i class="bi bi-shield-check-fill"></i></div>
+                    <h6 class="fw-bold">Trusted Escrow</h6>
+                    <p class="text-muted small mb-0">Kaze holds funds securely between both parties. No scams, no skips.</p>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="card h-100 p-3">
+                    <div class="text-danger fs-2 mb-2"><i class="bi bi-people-fill"></i></div>
+                    <h6 class="fw-bold">Peer-to-Peer</h6>
+                    <p class="text-muted small mb-0">Bet directly against other users. We never take the opposite side.</p>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="card h-100 p-3">
+                    <div class="text-danger fs-2 mb-2"><i class="bi bi-wallet2"></i></div>
+                    <h6 class="fw-bold">GCash & Bank</h6>
+                    <p class="text-muted small mb-0">Top up and withdraw via GCash, bank transfer, or PayPal.</p>
+                </div>
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private string _username = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var email = authState.User.Identity?.Name ?? string.Empty;
+        _username = email.Contains('@') ? email.Split('@')[0] : email;
+    }
+}

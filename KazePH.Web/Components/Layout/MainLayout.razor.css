@@ -1,98 +1,94 @@
-.page {
-    position: relative;
-    display: flex;
-    flex-direction: column;
+/* ── Top Navbar ─────────────────────────────────────────────────────────── */
+.kaze-navbar {
+    background-color: #12122a;
+    height: 56px;
+    border-bottom: 2px solid #e94560;
+    z-index: 1030;
 }
 
-main {
-    flex: 1;
+.kaze-nav-link {
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: color 0.15s, background-color 0.15s;
+    white-space: nowrap;
 }
 
-.sidebar {
-    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+.kaze-nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.08);
 }
 
-.top-row {
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #d6d5d5;
-    justify-content: flex-end;
-    height: 3.5rem;
+.kaze-nav-link.active {
+    color: #e94560;
+    background-color: rgba(233, 69, 96, 0.12);
+}
+
+/* ── Main Content ───────────────────────────────────────────────────────── */
+.kaze-main {
+    margin-top: 56px;
+    min-height: calc(100vh - 56px);
+    background-color: #0f0f1e;
+    color: #e0e0f0;
+}
+
+/* ── Offcanvas Sidebar ──────────────────────────────────────────────────── */
+.kaze-offcanvas {
+    background-color: #12122a;
+    color: #e0e0f0;
+    width: 260px;
+}
+
+.kaze-sidebar-link {
     display: flex;
     align-items: center;
+    gap: 0.65rem;
+    color: rgba(255, 255, 255, 0.75);
+    text-decoration: none;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    border-left: 3px solid transparent;
+    transition: color 0.15s, background-color 0.15s, border-color 0.15s;
 }
 
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        white-space: nowrap;
-        margin-left: 1.5rem;
-        text-decoration: none;
-    }
-
-    .top-row ::deep a:hover, .top-row ::deep .btn-link:hover {
-        text-decoration: underline;
-    }
-
-    .top-row ::deep a:first-child {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-@media (max-width: 640.98px) {
-    .top-row {
-        justify-content: space-between;
-    }
-
-    .top-row ::deep a, .top-row ::deep .btn-link {
-        margin-left: 0;
-    }
+.kaze-sidebar-link i {
+    font-size: 1.1rem;
+    width: 1.3rem;
+    text-align: center;
 }
 
-@media (min-width: 641px) {
-    .page {
-        flex-direction: row;
-    }
-
-    .sidebar {
-        width: 250px;
-        height: 100vh;
-        position: sticky;
-        top: 0;
-    }
-
-    .top-row {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
-
-    .top-row.auth ::deep a:first-child {
-        flex: 1;
-        text-align: right;
-        width: 0;
-    }
-
-    .top-row, article {
-        padding-left: 2rem !important;
-        padding-right: 1.5rem !important;
-    }
+.kaze-sidebar-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.06);
 }
 
+.kaze-sidebar-link.active {
+    color: #e94560;
+    border-left-color: #e94560;
+    background-color: rgba(233, 69, 96, 0.1);
+}
+
+/* ── Blazor Error UI ────────────────────────────────────────────────────── */
 #blazor-error-ui {
     color-scheme: light only;
-    background: lightyellow;
+    background: #2a1a1a;
+    color: #ffcccc;
     bottom: 0;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.4);
     box-sizing: border-box;
     display: none;
     left: 0;
     padding: 0.6rem 1.25rem 0.7rem 1.25rem;
     position: fixed;
     width: 100%;
-    z-index: 1000;
+    z-index: 1031;
 }
 
-    #blazor-error-ui .dismiss {
-        cursor: pointer;
-        position: absolute;
-        right: 0.75rem;
-        top: 0.5rem;
-    }
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
