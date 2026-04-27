@@ -4,4 +4,5 @@
   <Project Path="KazePH.Core/KazePH.Core.csproj" />
   <Project Path="KazePH.Infrastructure/KazePH.Infrastructure.csproj" />
   <Project Path="KazePH.Web/KazePH.Web.csproj" />
+  <Project Path="KazePH.Tests/KazePH.Tests.csproj" />
 </Solution>
