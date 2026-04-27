@@ -26,6 +26,10 @@ else if (_submitted)
         <p class="text-muted">
             Your request of <strong class="text-white">₱@_amount.ToString("N2")</strong> is pending admin review.<br />
             You will receive <strong class="text-success">₱@_netAmount.ToString("N2")</strong> after the @_feePercent% platform fee.
+            @if (_agentTip > 0)
+            {
+                <br /><span class="text-warning small">You also tipped the agent <strong>₱@_agentTip.ToString("N2")</strong> — thank you!</span>
+            }
         </p>
         <a href="/wallet" class="btn btn-primary mt-2">Back to Wallet</a>
     </div>
@@ -127,8 +131,50 @@ else
                         <span class="fw-semibold">You'll receive</span>
                         <span class="fw-bold fs-5 @(_netAmount > 0 ? "text-success" : "text-danger")">₱@_netAmount.ToString("N2")</span>
                     </div>
+                    @if (_agentTip > 0)
+                    {
+                        <hr class="border-secondary my-2" />
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted small">Agent Tip</span>
+                            <span class="text-info">+₱@_agentTip.ToString("N2")</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="fw-semibold">Total deducted</span>
+                            <span class="fw-bold">₱@((_amount + _agentTip).ToString("N2"))</span>
+                        </div>
+                    }
                 </div>
             }
+        </div>
+    </div>
+
+    <!-- Tip for Agent (optional) -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                    <div class="fw-semibold"><i class="bi bi-heart-fill text-danger me-1"></i>Tip for Agent <span class="badge bg-secondary ms-1" style="font-size:0.65rem">Optional</span></div>
+                    <div class="text-muted small">Show appreciation to the agent who processes your withdrawal</div>
+                </div>
+            </div>
+            <!-- Preset amounts -->
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                @foreach (var preset in new decimal[] { 0, 10, 20, 50, 100 })
+                {
+                    <button type="button"
+                            class="btn btn-sm @(_agentTip == preset ? "btn-info" : "btn-outline-secondary")"
+                            @onclick="() => SetTip(preset)">
+                        @(preset == 0 ? "No Tip" : $"₱{preset}")
+                    </button>
+                }
+            </div>
+            <!-- Custom tip input -->
+            <div class="input-group input-group-sm" style="max-width:180px">
+                <span class="input-group-text">₱</span>
+                <input type="number" class="form-control" placeholder="Custom amount"
+                       @bind="_agentTip" @bind:event="oninput" @bind:after="RecalcFee"
+                       min="0" step="1" />
+            </div>
         </div>
     </div>
 
@@ -153,6 +199,7 @@ else
     private decimal _amount;
     private decimal _fee;
     private decimal _netAmount;
+    private decimal _agentTip;
 
     private PaymentMethod _paymentMethod = PaymentMethod.GCash;
     private string _accountNumber = string.Empty;
@@ -184,7 +231,13 @@ else
     {
         _fee = Math.Round(_amount * _feePercent / 100m, 2);
         _netAmount = _amount - _fee;
+        if (_agentTip < 0) _agentTip = 0;
         return Task.CompletedTask;
+    }
+
+    private void SetTip(decimal amount)
+    {
+        _agentTip = amount;
     }
 
     private async Task SubmitAsync()
@@ -199,8 +252,9 @@ else
         { _error = "Please enter your bank name."; return; }
         if (_amount <= 0)
         { _error = "Please enter a valid amount greater than zero."; return; }
-        if (_amount > _availableBalance)
-        { _error = "Insufficient balance."; return; }
+        var tip = Math.Max(0, _agentTip);
+        if (_amount + tip > _availableBalance)
+        { _error = "Insufficient balance (including tip)."; return; }
 
         RecalcFee();
         if (_netAmount <= 0)
@@ -213,7 +267,7 @@ else
                 ? JsonSerializer.Serialize(new { bankName = _bankName, accountNumber = _accountNumber, accountName = _accountName })
                 : JsonSerializer.Serialize(new { accountNumber = _accountNumber, accountName = _accountName });
 
-            await WithdrawalService.RequestWithdrawalAsync(_userId, _amount, _paymentMethod, dest);
+            await WithdrawalService.RequestWithdrawalAsync(_userId, _amount, _paymentMethod, dest, Math.Max(0, _agentTip));
             _submitted = true;
         }
         catch (Exception ex)

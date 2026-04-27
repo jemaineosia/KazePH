@@ -33,6 +33,7 @@ public class WithdrawalService : IWithdrawalService
         decimal amount,
         PaymentMethod paymentMethod,
         string destinationDetails,
+        decimal agentTip = 0,
         CancellationToken cancellationToken = default)
     {
         var fee = await CalculateFeeAsync(amount, paymentMethod, cancellationToken);
@@ -41,8 +42,11 @@ public class WithdrawalService : IWithdrawalService
         if (netAmount <= 0)
             throw new InvalidOperationException("The withdrawal fee exceeds the requested amount.");
 
-        // Move funds to pending state
-        await _walletService.DebitFundsAsync(userId, amount, cancellationToken);
+        var tip = Math.Max(0, agentTip);
+        var totalDebit = amount + tip;
+
+        // Debit withdrawal amount + tip from available balance
+        await _walletService.DebitFundsAsync(userId, totalDebit, cancellationToken);
 
         var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.UserId == userId, cancellationToken)
             ?? throw new InvalidOperationException($"Wallet not found for user '{userId}'.");
@@ -57,6 +61,7 @@ public class WithdrawalService : IWithdrawalService
             Amount = amount,
             Fee = fee,
             NetAmount = netAmount,
+            AgentTip = tip,
             PaymentMethod = paymentMethod,
             DestinationDetails = destinationDetails,
             Status = WithdrawalStatus.Pending,

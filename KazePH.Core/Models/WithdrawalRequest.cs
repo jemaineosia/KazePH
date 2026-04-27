@@ -22,6 +22,9 @@ public class WithdrawalRequest
     /// <summary>Net amount the user actually receives after fee deduction.</summary>
     public decimal NetAmount { get; set; }
 
+    /// <summary>Optional tip the user voluntarily adds for the agent processing their request.</summary>
+    public decimal AgentTip { get; set; }
+
     /// <summary>Chosen payout channel.</summary>
     public PaymentMethod PaymentMethod { get; set; }
 

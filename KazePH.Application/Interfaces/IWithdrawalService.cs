@@ -21,6 +21,7 @@ public interface IWithdrawalService
     /// <param name="amount">Gross amount the user wants to withdraw.</param>
     /// <param name="paymentMethod">Selected payout channel.</param>
     /// <param name="destinationDetails">JSON-serialised destination info (GCash number, bank account, or PayPal email).</param>
+    /// <param name="agentTip">Optional voluntary tip the user adds for the processing agent. Deducted separately from wallet.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The created <see cref="WithdrawalRequest"/> with fee and net amount pre-calculated.</returns>
     Task<WithdrawalRequest> RequestWithdrawalAsync(
@@ -28,6 +29,7 @@ public interface IWithdrawalService
         decimal amount,
         PaymentMethod paymentMethod,
         string destinationDetails,
+        decimal agentTip = 0,
         CancellationToken cancellationToken = default);
 
     /// <summary>Admin marks the withdrawal as being actively processed.</summary>
