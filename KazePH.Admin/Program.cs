@@ -30,6 +30,7 @@ builder.Services.AddScoped<IEventService, EventService>();
 builder.Services.AddScoped<IDisputeService, DisputeService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IPlatformConfigService, PlatformConfigService>();
+builder.Services.AddScoped<IPaymentAccountService, PaymentAccountService>();
 
 // ── Blazor ───────────────────────────────────────────────────────────────────
 builder.Services.AddRazorComponents()

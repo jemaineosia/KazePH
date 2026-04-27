@@ -1,0 +1,248 @@
+@page "/admin/payment-methods"
+@rendermode InteractiveServer
+@inject IPaymentAccountService PaymentSvc
+
+<PageTitle>Payment Methods – KazePH Admin</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0">Payment Methods</h4>
+    <button class="btn btn-primary btn-sm" @onclick="OpenAddModal">
+        <i class="bi bi-plus-circle me-1"></i>Add Account
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(_saveSuccess))
+{
+    <div class="alert alert-success py-2 small alert-dismissible">
+        <i class="bi bi-check-circle-fill me-1"></i>@_saveSuccess
+        <button type="button" class="btn-close btn-close-sm" @onclick="() => _saveSuccess = null"></button>
+    </div>
+}
+@if (!string.IsNullOrEmpty(_saveError))
+{
+    <div class="alert alert-danger py-2 small">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>@_saveError
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else
+{
+    <!-- Group by type -->
+    @foreach (var group in _accounts.GroupBy(a => a.Type).OrderBy(g => g.Key.ToString()))
+    {
+        <h6 class="fw-semibold text-muted mb-2 mt-3">
+            <i class="bi @TypeIcon(group.Key) me-1"></i>@group.Key
+        </h6>
+        <div class="d-flex flex-column gap-2 mb-3">
+            @foreach (var acct in group)
+            {
+                <div class="card p-3 @(acct.IsActive ? "" : "opacity-50")">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold">@acct.Label</div>
+                            <div class="text-muted small">
+                                @acct.AccountNumber &nbsp;·&nbsp; @acct.AccountName
+                                @if (!string.IsNullOrEmpty(acct.BankName))
+                                {
+                                    <span>&nbsp;·&nbsp; @acct.BankName</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="form-check form-switch mb-0" title="@(acct.IsActive ? "Visible to users" : "Hidden from users")">
+                                <input class="form-check-input" type="checkbox" role="switch"
+                                       checked="@acct.IsActive"
+                                       @onchange="e => ToggleActive(acct, (bool)e.Value!)" />
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenEditModal(acct)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAccount(acct)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_accounts.Count == 0)
+    {
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-credit-card fs-2 d-block mb-2"></i>
+            No payment accounts yet. Click <strong>Add Account</strong> to get started.
+        </div>
+    }
+
+    <div class="mt-4">
+        <button class="btn btn-success fw-semibold" @onclick="SaveAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
+            <i class="bi bi-floppy me-1"></i>Save Changes
+        </button>
+        <span class="text-muted small ms-3">Changes only take effect after saving.</span>
+    </div>
+}
+
+<!-- Add / Edit Modal -->
+@if (_editAccount is not null)
+{
+    <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
+    <div class="modal d-block" tabindex="-1" style="z-index:1050">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">@(_isNew ? "Add Payment Account" : "Edit Payment Account")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" @bind="_editAccount.Type" disabled="@(!_isNew)">
+                            @foreach (var m in Enum.GetValues<PaymentMethod>())
+                            {
+                                <option value="@m">@m</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Label <span class="text-muted small">(internal name)</span></label>
+                        <input type="text" class="form-control" @bind="_editAccount.Label"
+                               placeholder='e.g. "GCash Main", "BDO Savings"' />
+                    </div>
+                    @if (_editAccount.Type == PaymentMethod.Bank)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Bank Name</label>
+                            <input type="text" class="form-control" @bind="_editAccount.BankName" placeholder="e.g. BDO, BPI, UnionBank" />
+                        </div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">Account Number / Phone</label>
+                        <input type="text" class="form-control" @bind="_editAccount.AccountNumber"
+                               placeholder="@(_editAccount.Type == PaymentMethod.GCash ? "e.g. 09XXXXXXXXX" : _editAccount.Type == PaymentMethod.PayPal ? "e.g. email@paypal.com" : "e.g. 1234 5678 9012")" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account Name</label>
+                        <input type="text" class="form-control" @bind="_editAccount.AccountName" placeholder="e.g. Juan dela Cruz" />
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="activeSwitch"
+                               checked="@_editAccount.IsActive"
+                               @onchange="e => _editAccount.IsActive = (bool)e.Value!" />
+                        <label class="form-check-label" for="activeSwitch">Visible to users</label>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_modalError))
+                    {
+                        <div class="alert alert-danger py-2 small mt-3">@_modalError</div>
+                    }
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="ConfirmEdit">
+                        @(_isNew ? "Add" : "Update")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _saving;
+    private List<PaymentAccount> _accounts = new();
+    private string? _saveSuccess;
+    private string? _saveError;
+
+    private PaymentAccount? _editAccount;
+    private bool _isNew;
+    private string? _modalError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _accounts = await PaymentSvc.GetAllAsync();
+        _loading = false;
+    }
+
+    private void OpenAddModal()
+    {
+        _editAccount = new PaymentAccount { IsActive = true };
+        _isNew = true;
+        _modalError = null;
+    }
+
+    private void OpenEditModal(PaymentAccount acct)
+    {
+        // Clone to avoid mutating list until confirmed
+        _editAccount = new PaymentAccount
+        {
+            Id = acct.Id,
+            Type = acct.Type,
+            Label = acct.Label,
+            AccountNumber = acct.AccountNumber,
+            AccountName = acct.AccountName,
+            BankName = acct.BankName,
+            IsActive = acct.IsActive
+        };
+        _isNew = false;
+        _modalError = null;
+    }
+
+    private void ConfirmEdit()
+    {
+        if (_editAccount is null) return;
+        if (string.IsNullOrWhiteSpace(_editAccount.Label)) { _modalError = "Label is required."; return; }
+        if (string.IsNullOrWhiteSpace(_editAccount.AccountNumber)) { _modalError = "Account number is required."; return; }
+        if (string.IsNullOrWhiteSpace(_editAccount.AccountName)) { _modalError = "Account name is required."; return; }
+
+        if (_isNew)
+        {
+            _accounts.Add(_editAccount);
+        }
+        else
+        {
+            var idx = _accounts.FindIndex(a => a.Id == _editAccount.Id);
+            if (idx >= 0) _accounts[idx] = _editAccount;
+        }
+        CloseModal();
+    }
+
+    private void CloseModal() { _editAccount = null; _modalError = null; }
+
+    private void ToggleActive(PaymentAccount acct, bool value) => acct.IsActive = value;
+
+    private void DeleteAccount(PaymentAccount acct) => _accounts.Remove(acct);
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _saveError = null;
+        _saveSuccess = null;
+        try
+        {
+            await PaymentSvc.SaveAllAsync(_accounts);
+            _saveSuccess = "Payment methods saved successfully.";
+        }
+        catch (Exception ex)
+        {
+            _saveError = $"Save failed: {ex.Message}";
+        }
+        finally { _saving = false; }
+    }
+
+    private static string TypeIcon(PaymentMethod m) => m switch
+    {
+        PaymentMethod.GCash => "bi-phone-fill",
+        PaymentMethod.Bank => "bi-bank",
+        PaymentMethod.PayPal => "bi-paypal",
+        _ => "bi-credit-card"
+    };
+}

@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run KazePH.Web",
+      "type": "shell",
+      "command": "dotnet",
+      "args": ["run", "--project", "KazePH.Web"],
+      "group": "build",
+      "presentation": { "panel": "dedicated", "group": "run" },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "line": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Building\\.\\.\\.",
+          "endsPattern": "Now listening on:"
+        }
+      }
+    },
+    {
+      "label": "Run KazePH.Admin",
+      "type": "shell",
+      "command": "dotnet",
+      "args": ["run", "--project", "KazePH.Admin"],
+      "group": "build",
+      "presentation": { "panel": "dedicated", "group": "run" },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^(.*)$", "file": 1, "line": 2, "message": 3 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Building\\.\\.\\.",
+          "endsPattern": "Now listening on:"
+        }
+      }
+    },
+    {
+      "label": "Run All",
+      "dependsOn": ["Run KazePH.Web", "Run KazePH.Admin"],
+      "dependsOrder": "parallel",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always" }
+    }
+  ]
+}

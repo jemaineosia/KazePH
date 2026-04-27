@@ -1,7 +1,103 @@
 @page "/wallet"
 @rendermode InteractiveServer
+@attribute [Authorize]
+@inject IWalletService WalletService
+@inject KazeDbContext Db
+@inject AuthenticationStateProvider AuthState
 
 <PageTitle>Wallet – KazePH</PageTitle>
 
-<h1>Wallet</h1>
-<p>Coming soon.</p>
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-danger" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else
+{
+    <!-- Balance Card -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="card-title mb-0"><i class="bi bi-wallet2 me-2 text-danger"></i>My Wallet</h5>
+                <a href="/wallet/topup" class="btn btn-primary btn-sm fw-semibold">
+                    <i class="bi bi-plus-circle me-1"></i>Cash In
+                </a>
+            </div>
+            <div class="row g-3">
+                <div class="col-6">
+                    <div class="p-3 rounded" style="background:#0f0f1e">
+                        <div class="text-muted small mb-1">Available</div>
+                        <div class="fs-3 fw-bold text-success">₱@(_wallet?.AvailableBalance.ToString("N2") ?? "0.00")</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="p-3 rounded" style="background:#0f0f1e">
+                        <div class="text-muted small mb-1">Locked in Bets</div>
+                        <div class="fs-3 fw-bold text-warning">₱@(_wallet?.LockedBalance.ToString("N2") ?? "0.00")</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cash-In History -->
+    <h6 class="fw-semibold mb-3">Cash-In History</h6>
+    @if (_topUps.Count == 0)
+    {
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+            No cash-in requests yet.<br />
+            <a href="/wallet/topup" class="btn btn-primary btn-sm mt-3">Make your first Cash-In</a>
+        </div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-2">
+            @foreach (var t in _topUps)
+            {
+                <div class="card p-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-semibold">₱@t.Amount.ToString("N2")</div>
+                            <div class="text-muted small">@t.PaymentMethod &nbsp;·&nbsp; @t.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</div>
+                            @if (!string.IsNullOrEmpty(t.AdminNote))
+                            {
+                                <div class="text-muted small fst-italic mt-1"><i class="bi bi-chat-left-text me-1"></i>@t.AdminNote</div>
+                            }
+                        </div>
+                        <span class="badge @StatusBadge(t.Status)">@t.Status</span>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private KazePH.Core.Models.Wallet? _wallet;
+    private List<TopUpRequest> _topUps = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        var userId = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId)) return;
+
+        _wallet = await WalletService.GetBalanceAsync(userId);
+        _topUps = await Db.TopUpRequests
+            .Where(r => r.UserId == userId)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync();
+
+        _loading = false;
+    }
+
+    private static string StatusBadge(TopUpStatus status) => status switch
+    {
+        TopUpStatus.Approved => "bg-success",
+        TopUpStatus.Rejected => "bg-danger",
+        _ => "bg-warning text-dark"
+    };
+}

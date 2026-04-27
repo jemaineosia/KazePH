@@ -1,7 +1,213 @@
 @page "/wallet/topup"
 @rendermode InteractiveServer
+@attribute [Authorize]
+@inject ITopUpService TopUpService
+@inject IPaymentAccountService PaymentAccountSvc
+@inject IWebHostEnvironment Env
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
 
-<PageTitle>Top Up – KazePH</PageTitle>
+<PageTitle>Cash In – KazePH</PageTitle>
 
-<h1>Top Up</h1>
-<p>Coming soon.</p>
+<div class="mb-3">
+    <a href="/wallet" class="text-muted text-decoration-none small">
+        <i class="bi bi-arrow-left me-1"></i>Back to Wallet
+    </a>
+</div>
+<h5 class="fw-semibold mb-1">Cash In</h5>
+<p class="text-muted small mb-4">Send money to one of our platform accounts, then upload your receipt below for admin review.</p>
+
+<!-- Payment Details -->
+<div class="card mb-4" style="border-color:#f0ad4e">
+    <div class="card-body">
+        <h6 class="fw-semibold mb-3"><i class="bi bi-info-circle me-1 text-warning"></i>Where to send</h6>
+        @if (_activeAccounts.Count == 0)
+        {
+            <p class="text-muted small mb-0">No payment accounts available. Please contact admin.</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var acct in _activeAccounts)
+                {
+                    <div class="col-12 col-sm-6 col-md-4">
+                        <div class="p-3 rounded" style="background:#0f0f1e">
+                            <div class="text-muted small mb-1 d-flex align-items-center gap-1">
+                                <i class="bi @AccountIcon(acct.Type)"></i>
+                                @(acct.Type == PaymentMethod.Bank && !string.IsNullOrEmpty(acct.BankName)
+                                    ? acct.BankName
+                                    : acct.Type.ToString())
+                            </div>
+                            <div class="fw-semibold">@acct.AccountNumber</div>
+                            <div class="text-muted small">@acct.AccountName</div>
+                            @if (!string.IsNullOrEmpty(acct.Label))
+                            {
+                                <div class="text-muted" style="font-size:0.7rem">@acct.Label</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@if (_submitted)
+{
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        <strong>Request submitted!</strong> We'll review your receipt and credit your wallet within 30 minutes.
+        <div class="mt-3">
+            <a href="/wallet" class="btn btn-sm btn-success">View Wallet</a>
+        </div>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger py-2 small">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>@_error
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">Amount (₱)</label>
+                <input type="number" class="form-control" @bind="_amount" min="100" step="1" placeholder="e.g. 500" />
+                @if (_amountError)
+                {
+                    <div class="text-danger small mt-1">Minimum amount is ₱100.</div>
+                }
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Payment Method</label>
+                <select class="form-select" @bind="_paymentMethod">
+                    @foreach (var m in _activeAccounts.Select(a => a.Type).Distinct())
+                    {
+                        <option value="@m">@m</option>
+                    }
+                    @if (!_activeAccounts.Any())
+                    {
+                        @foreach (var m in Enum.GetValues<PaymentMethod>())
+                        {
+                            <option value="@m">@m</option>
+                        }
+                    }
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label">Receipt Screenshot</label>
+                <InputFile class="form-control" accept="image/*,.pdf" OnChange="OnFileSelected" />
+                <div class="form-text text-muted">JPG, PNG or PDF · max 5 MB</div>
+                @if (_fileError)
+                {
+                    <div class="text-danger small mt-1">@_fileErrorMsg</div>
+                }
+                @if (_file is not null)
+                {
+                    <div class="mt-2 text-muted small">
+                        <i class="bi bi-paperclip me-1"></i>@_file.Name (@(_file.Size / 1024) KB)
+                    </div>
+                }
+            </div>
+
+            <button class="btn btn-primary w-100 py-2 fw-semibold" @onclick="SubmitAsync" disabled="@_submitting">
+                @if (_submitting)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                }
+                Submit Cash-In Request
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private decimal _amount;
+    private PaymentMethod _paymentMethod = PaymentMethod.GCash;
+    private IBrowserFile? _file;
+    private bool _submitting;
+    private bool _submitted;
+    private string? _error;
+    private bool _amountError;
+    private bool _fileError;
+    private string _fileErrorMsg = string.Empty;
+    private const long MaxFileSize = 5 * 1024 * 1024;
+    private List<PaymentAccount> _activeAccounts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeAccounts = await PaymentAccountSvc.GetActiveAsync();
+        if (_activeAccounts.Any())
+            _paymentMethod = _activeAccounts[0].Type;
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _fileError = false;
+        var f = e.File;
+        if (f.Size > MaxFileSize)
+        {
+            _fileError = true;
+            _fileErrorMsg = "File exceeds 5 MB limit.";
+            _file = null;
+            return;
+        }
+        _file = f;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _amountError = false;
+        _fileError = false;
+
+        if (_amount < 100) { _amountError = true; return; }
+        if (_file is null) { _fileError = true; _fileErrorMsg = "Please upload your receipt."; return; }
+
+        _submitting = true;
+        try
+        {
+            var state = await AuthState.GetAuthenticationStateAsync();
+            var userId = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId)) { _error = "Session expired. Please sign in again."; return; }
+
+            // Save receipt file to wwwroot/uploads/receipts/
+            var ext = Path.GetExtension(_file.Name).ToLowerInvariant();
+            var fileName = $"{Guid.NewGuid()}{ext}";
+            var uploadsDir = Path.Combine(Env.WebRootPath, "uploads", "receipts");
+            Directory.CreateDirectory(uploadsDir);
+            var filePath = Path.Combine(uploadsDir, fileName);
+
+            await using (var stream = _file.OpenReadStream(MaxFileSize))
+            await using (var fs = File.Create(filePath))
+            {
+                await stream.CopyToAsync(fs);
+            }
+
+            var receiptUrl = $"/uploads/receipts/{fileName}";
+            await TopUpService.SubmitTopUpAsync(userId, _amount, _paymentMethod, receiptUrl);
+            _submitted = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Something went wrong: {ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private static string AccountIcon(PaymentMethod m) => m switch
+    {
+        PaymentMethod.GCash => "bi-phone-fill",
+        PaymentMethod.Bank  => "bi-bank",
+        PaymentMethod.PayPal => "bi-paypal",
+        _ => "bi-credit-card"
+    };
+}
