@@ -26,7 +26,36 @@ public class Event
     public EventType EventType { get; set; }
 
     /// <summary>Current lifecycle status of the event.</summary>
-    public EventStatus Status { get; set; } = EventStatus.Draft;
+    public EventStatus Status { get; set; } = EventStatus.Open;
+
+    /// <summary>Name of the first side/team participants can bet on.</summary>
+    public string SideA { get; set; } = "Side A";
+
+    /// <summary>Name of the second side/team participants can bet on.</summary>
+    public string SideB { get; set; } = "Side B";
+
+    /// <summary>
+    /// Fixed stake amount per participant. Required for 1v1 events (both sides bet this amount).
+    /// For Pool events this is the optional minimum bet per entry.
+    /// </summary>
+    public decimal? StakeAmount { get; set; }
+
+    // ── 1v1-specific fields ───────────────────────────────────────────────────
+
+    /// <summary>"A" or "B" — which side the creator bet on (1v1 only).</summary>
+    public string? CreatorSide { get; set; }
+
+    /// <summary>How much the creator staked. Equal to StakeAmount for 1v1.</summary>
+    public decimal? CreatorStake { get; set; }
+
+    /// <summary>Amount the opponent must stake to accept the 1v1 challenge (may differ from creator's stake).</summary>
+    public decimal? OpponentStake { get; set; }
+
+    /// <summary>Identity ID of a specific user the creator is challenging (optional direct invite).</summary>
+    public string? ChallengedUserId { get; set; }
+
+    /// <summary>Username of the challenged user for display (optional direct invite).</summary>
+    public string? ChallengedUsername { get; set; }
 
     /// <summary>Date and time the event record was created (UTC).</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -82,7 +82,7 @@ public class WithdrawalService : IWithdrawalService
     }
 
     /// <inheritdoc />
-    public async Task CompleteWithdrawalAsync(Guid requestId, string? receiptUrl = null, CancellationToken cancellationToken = default)
+    public async Task CompleteWithdrawalAsync(Guid requestId, string? receiptUrl = null, string? processedByUsername = null, CancellationToken cancellationToken = default)
     {
         var request = await GetRequestByStatus(requestId, WithdrawalStatus.Processing, cancellationToken);
 
@@ -95,12 +95,13 @@ public class WithdrawalService : IWithdrawalService
         request.Status = WithdrawalStatus.Completed;
         request.ReceiptUrl = receiptUrl;
         request.ProcessedAt = DateTime.UtcNow;
+        request.ProcessedByUsername = processedByUsername;
 
         await _db.SaveChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task RejectWithdrawalAsync(Guid requestId, string adminNote, CancellationToken cancellationToken = default)
+    public async Task RejectWithdrawalAsync(Guid requestId, string adminNote, string? processedByUsername = null, CancellationToken cancellationToken = default)
     {
         var request = await _db.WithdrawalRequests.FirstOrDefaultAsync(r => r.Id == requestId, cancellationToken)
             ?? throw new InvalidOperationException($"WithdrawalRequest '{requestId}' not found.");
@@ -119,6 +120,7 @@ public class WithdrawalService : IWithdrawalService
         request.Status = WithdrawalStatus.Rejected;
         request.AdminNote = adminNote;
         request.ProcessedAt = DateTime.UtcNow;
+        request.ProcessedByUsername = processedByUsername;
 
         await _db.SaveChangesAsync(cancellationToken);
     }

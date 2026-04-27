@@ -35,6 +35,7 @@ builder.Services.AddScoped<IPaymentAccountService, PaymentAccountService>();
 // ── Blazor ───────────────────────────────────────────────────────────────────
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddCascadingAuthenticationState();
 
 var app = builder.Build();
 

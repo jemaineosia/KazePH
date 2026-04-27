@@ -3,6 +3,7 @@ using System;
 using KazePH.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace KazePH.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(KazeDbContext))]
-    partial class KazeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260427042028_AddEventSidesAndStake")]
+    partial class AddEventSidesAndStake
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -167,24 +170,12 @@ namespace KazePH.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("ChallengedUserId")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ChallengedUsername")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("CreatorId")
                         .IsRequired()
                         .HasColumnType("character varying(450)");
-
-                    b.Property<string>("CreatorSide")
-                        .HasColumnType("text");
-
-                    b.Property<decimal?>("CreatorStake")
-                        .HasColumnType("numeric");
 
                     b.Property<string>("Description")
                         .IsRequired()
@@ -195,9 +186,6 @@ namespace KazePH.Infrastructure.Data.Migrations
 
                     b.Property<int>("EventType")
                         .HasColumnType("integer");
-
-                    b.Property<decimal?>("OpponentStake")
-                        .HasColumnType("numeric");
 
                     b.Property<string>("SideA")
                         .IsRequired()

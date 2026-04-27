@@ -9,21 +9,42 @@ namespace KazePH.Application.Interfaces;
 public interface IEventService
 {
     /// <summary>
-    /// Creates a new betting event in <see cref="EventStatus.Draft"/> status.
+    /// Creates a new betting event. For 1v1 events, the creator's stake is locked immediately
+    /// and a BetEntry is created for the creator.
     /// </summary>
-    /// <param name="creatorId">Identity ID of the user creating the event.</param>
-    /// <param name="title">Short title for the event.</param>
-    /// <param name="description">Detailed description of what is being bet on.</param>
-    /// <param name="eventDate">Scheduled date and time of the event (UTC).</param>
-    /// <param name="eventType">Whether this is a 1v1 or pool event.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The newly created <see cref="Event"/>.</returns>
+    /// <param name="creatorSide">"A" or "B" — which side the creator is betting on (1v1 only).</param>
+    /// <param name="creatorStake">Amount the creator is staking (1v1 only).</param>
+    /// <param name="opponentStake">Amount the opponent must stake to accept (1v1 only).</param>
+    /// <param name="challengedUserId">Optional: direct challenge to a specific user's identity ID.</param>
+    /// <param name="challengedUsername">Optional: username of the challenged user for display.</param>
+    /// <param name="minStake">Optional minimum bet per entry (Pool only).</param>
     Task<Event> CreateEventAsync(
         string creatorId,
         string title,
         string description,
         DateTime eventDate,
         EventType eventType,
+        string sideA,
+        string sideB,
+        string? creatorSide = null,
+        decimal? creatorStake = null,
+        decimal? opponentStake = null,
+        string? challengedUserId = null,
+        string? challengedUsername = null,
+        decimal? minStake = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Accepts an open 1v1 challenge. Locks the opponent's required stake and sets the event to Active.
+    /// </summary>
+    /// <param name="eventId">The 1v1 event to accept.</param>
+    /// <param name="opponentId">Identity ID of the user accepting the challenge.</param>
+    Task AcceptChallengeAsync(Guid eventId, string opponentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns events, optionally filtered by status and/or type, newest first.</summary>
+    Task<List<Event>> GetEventsAsync(
+        EventStatus? status = null,
+        EventType? type = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Retrieves a single event by its primary key.</summary>

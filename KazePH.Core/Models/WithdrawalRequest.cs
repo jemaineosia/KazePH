@@ -43,6 +43,9 @@ public class WithdrawalRequest
     /// <summary>URL of the receipt uploaded by admin after sending the payout.</summary>
     public string? ReceiptUrl { get; set; }
 
+    /// <summary>Username of the admin/agent who processed (completed or rejected) this request.</summary>
+    public string? ProcessedByUsername { get; set; }
+
     /// <summary>Date and time the withdrawal was requested (UTC).</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

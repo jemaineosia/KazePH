@@ -1,7 +1,322 @@
-@page "/events/create"
+﻿@page "/events/create"
 @rendermode InteractiveServer
+@attribute [Authorize]
+@inject IEventService EventService
+@inject IWalletService WalletService
+@inject KazeDbContext Db
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
 
-<PageTitle>Create Event – KazePH</PageTitle>
+<PageTitle>Create Event - KazePH</PageTitle>
 
-<h1>Create Event</h1>
-<p>Coming soon.</p>
+<!-- Header -->
+<div class="mb-4">
+    <a href="/events" class="text-muted small text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>Back to Events
+    </a>
+    <h4 class="fw-bold mt-2 mb-1">Create a Bet Event</h4>
+    <p class="text-muted small mb-0">Set up a new event and challenge someone.</p>
+</div>
+
+<!-- Event Type -->
+<h6 class="text-muted text-uppercase small mb-2" style="letter-spacing:.06em">Event Type</h6>
+<div class="row g-3 mb-4">
+    <div class="col-6">
+        <div class="card h-100 border-2 @(_eventType == EventType.OneVsOne ? "border-danger" : "border-secondary")"
+             style="background:#12122a;cursor:pointer"
+             @onclick="() => _eventType = EventType.OneVsOne">
+            <div class="card-body text-center py-4 @(_eventType == EventType.OneVsOne ? "text-white" : "text-muted")">
+                <i class="bi bi-person-arms-up fs-2 d-block mb-2 @(_eventType == EventType.OneVsOne ? "text-danger" : "")"></i>
+                <div class="fw-bold">1v1 Duel</div>
+                <div class="small mt-1">You vs one opponent</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6">
+        <div class="card h-100 border-2 @(_eventType == EventType.Pool ? "border-danger" : "border-secondary")"
+             style="background:#12122a;cursor:pointer"
+             @onclick="() => _eventType = EventType.Pool">
+            <div class="card-body text-center py-4 @(_eventType == EventType.Pool ? "text-white" : "text-muted")">
+                <i class="bi bi-people-fill fs-2 d-block mb-2 @(_eventType == EventType.Pool ? "text-danger" : "")"></i>
+                <div class="fw-bold">Pool Bet</div>
+                <div class="small mt-1">Multiple players, two sides</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Event Details -->
+<div class="card border-0 mb-3" style="background:#12122a">
+    <div class="card-body p-4">
+        <h6 class="fw-semibold mb-3">Event Details</h6>
+        <div class="mb-3">
+            <label class="form-label fw-semibold small">Title <span class="text-danger">*</span></label>
+            <input class="form-control kaze-input" placeholder="e.g. NBA Finals - Lakers vs OKC"
+                   maxlength="120" @bind="_title" @bind:event="oninput" />
+            @if (_errors.TryGetValue("title", out var e0)) { <div class="text-danger small mt-1">@e0</div> }
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold small">Description <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea class="form-control kaze-input" rows="2"
+                      placeholder="Rules, conditions, link to stream..." maxlength="1000"
+                      @bind="_description"></textarea>
+        </div>
+        <div>
+            <label class="form-label fw-semibold small">Event Date &amp; Time <span class="text-danger">*</span></label>
+            <input type="datetime-local" class="form-control kaze-input"
+                   @bind="_eventDateLocal" @bind:event="oninput" />
+            @if (_errors.TryGetValue("date", out var e1)) { <div class="text-danger small mt-1">@e1</div> }
+        </div>
+    </div>
+</div>
+
+<!-- Sides -->
+<div class="card border-0 mb-3" style="background:#12122a">
+    <div class="card-body p-4">
+        <h6 class="fw-semibold mb-3">Name the Two Sides</h6>
+        <div class="row g-3">
+            <div class="col-6">
+                <label class="form-label small fw-semibold"><span class="badge bg-success me-1">A</span>Side A</label>
+                <input class="form-control kaze-input" placeholder="e.g. Lakers" maxlength="60" @bind="_sideA" />
+            </div>
+            <div class="col-6">
+                <label class="form-label small fw-semibold"><span class="badge bg-danger me-1">B</span>Side B</label>
+                <input class="form-control kaze-input" placeholder="e.g. OKC" maxlength="60" @bind="_sideB" />
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_eventType == EventType.OneVsOne)
+{
+    <!-- Pick Your Side -->
+    <div class="card border-0 mb-3" style="background:#12122a">
+        <div class="card-body p-4">
+            <h6 class="fw-semibold mb-1">Which side are you betting on?</h6>
+            <p class="text-muted small mb-3">Your stake will be locked when you create the event.</p>
+            <div class="row g-3">
+                <div class="col-6">
+                    <div class="card border-2 @(_creatorSide == "A" ? "border-success" : "border-secondary") text-center"
+                         style="background:#0f0f1e;cursor:pointer" @onclick='() => _creatorSide = "A"'>
+                        <div class="card-body py-3 @(_creatorSide == "A" ? "text-white" : "text-muted")">
+                            <div class="fw-bold text-success">@(string.IsNullOrWhiteSpace(_sideA) ? "Side A" : _sideA)</div>
+                            @if (_creatorSide == "A") { <i class="bi bi-check-circle-fill text-success mt-1 d-block"></i> }
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card border-2 @(_creatorSide == "B" ? "border-danger" : "border-secondary") text-center"
+                         style="background:#0f0f1e;cursor:pointer" @onclick='() => _creatorSide = "B"'>
+                        <div class="card-body py-3 @(_creatorSide == "B" ? "text-white" : "text-muted")">
+                            <div class="fw-bold text-danger">@(string.IsNullOrWhiteSpace(_sideB) ? "Side B" : _sideB)</div>
+                            @if (_creatorSide == "B") { <i class="bi bi-check-circle-fill text-danger mt-1 d-block"></i> }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            @if (_errors.TryGetValue("side", out var e2)) { <div class="text-danger small mt-2">@e2</div> }
+        </div>
+    </div>
+
+    <!-- Stake Amounts -->
+    <div class="card border-0 mb-3" style="background:#12122a">
+        <div class="card-body p-4">
+            <h6 class="fw-semibold mb-3">Stake Amounts</h6>
+            <div class="mb-3">
+                <label class="form-label small fw-semibold">
+                    My Stake — I am betting on
+                    <span class="@(_creatorSide == "A" ? "text-success" : "text-danger") fw-bold">
+                        @(_creatorSide == "A" ? (string.IsNullOrWhiteSpace(_sideA) ? "Side A" : _sideA)
+                                              : (string.IsNullOrWhiteSpace(_sideB) ? "Side B" : _sideB))
+                    </span>
+                    <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                    <span class="input-group-text bg-dark text-white border-secondary">P</span>
+                    <input type="number" class="form-control kaze-input" placeholder="0.00" min="1" step="1"
+                           @bind="_creatorStake" @bind:event="oninput" />
+                </div>
+                @if (_errors.TryGetValue("creatorStake", out var e3)) { <div class="text-danger small mt-1">@e3</div> }
+                @if (_availableBalance.HasValue)
+                { <div class="form-text">Available: <span class="text-success">P@_availableBalance.Value.ToString("N2")</span></div> }
+            </div>
+            <div>
+                <label class="form-label small fw-semibold">
+                    Opponent Must Stake — for
+                    <span class="@(_creatorSide == "B" ? "text-success" : "text-danger") fw-bold">
+                        @(_creatorSide == "B" ? (string.IsNullOrWhiteSpace(_sideA) ? "Side A" : _sideA)
+                                              : (string.IsNullOrWhiteSpace(_sideB) ? "Side B" : _sideB))
+                    </span>
+                    <span class="text-danger">*</span>
+                </label>
+                <div class="input-group">
+                    <span class="input-group-text bg-dark text-white border-secondary">P</span>
+                    <input type="number" class="form-control kaze-input" placeholder="0.00" min="1" step="1"
+                           @bind="_opponentStake" />
+                </div>
+                <div class="form-text">Can be different from your stake (asymmetric odds).</div>
+                @if (_errors.TryGetValue("opponentStake", out var e4)) { <div class="text-danger small mt-1">@e4</div> }
+            </div>
+            @if (_creatorStake > 0 && _opponentStake > 0)
+            {
+                <div class="mt-3 p-3 rounded text-center" style="background:#0f0f1e">
+                    <div class="text-muted small mb-1">Total Prize Pool</div>
+                    <div class="fs-4 fw-bold text-warning">P@((_creatorStake + _opponentStake).Value.ToString("N2"))</div>
+                    <div class="text-muted small mt-1">
+                        <span class="text-success">You risk P@_creatorStake.Value.ToString("N2")</span>
+                        to win <span class="text-warning">P@_opponentStake.Value.ToString("N2")</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Direct Challenge -->
+    <div class="card border-0 mb-4" style="background:#12122a">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-semibold mb-0">Challenge a Specific User</h6>
+                <span class="badge bg-secondary">Optional</span>
+            </div>
+            <p class="text-muted small mb-3">
+                Know who you want to challenge? Enter their username. Leave blank and anyone can accept via the share link.
+            </p>
+            <div class="input-group">
+                <span class="input-group-text bg-dark text-white border-secondary"><i class="bi bi-person-fill"></i></span>
+                <input class="form-control kaze-input" placeholder="Username (optional)"
+                       maxlength="60" @bind="_challengeUsername" @bind:event="oninput" />
+            </div>
+            @if (_errors.TryGetValue("challenge", out var e5)) { <div class="text-danger small mt-1">@e5</div> }
+        </div>
+    </div>
+}
+else
+{
+    <!-- Pool minimum -->
+    <div class="card border-0 mb-4" style="background:#12122a">
+        <div class="card-body p-4">
+            <h6 class="fw-semibold mb-3">Minimum Bet per Entry <span class="text-muted fw-normal">(optional)</span></h6>
+            <div class="input-group">
+                <span class="input-group-text bg-dark text-white border-secondary">P</span>
+                <input type="number" class="form-control kaze-input" placeholder="No minimum" min="0" step="1"
+                       @bind="_minStake" />
+            </div>
+            <div class="form-text">Leave blank to allow any bet amount.</div>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger mb-3"><i class="bi bi-exclamation-triangle me-1"></i>@_error</div>
+}
+
+<div class="d-grid gap-2 mb-5">
+    <button class="btn btn-danger fw-bold py-2" @onclick="SubmitAsync" disabled="@_submitting">
+        @if (_submitting) { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
+        <i class="bi bi-lightning-fill me-1"></i>
+        @(_eventType == EventType.OneVsOne ? "Create Challenge" : "Create Event")
+    </button>
+    <a href="/events" class="btn btn-outline-secondary">Cancel</a>
+</div>
+
+@code {
+    private EventType _eventType = EventType.OneVsOne;
+    private string _title = string.Empty;
+    private string _description = string.Empty;
+    private DateTime _eventDateLocal = DateTime.Now.AddDays(1);
+    private string _sideA = string.Empty;
+    private string _sideB = string.Empty;
+    private string _creatorSide = string.Empty;
+    private decimal? _creatorStake;
+    private decimal? _opponentStake;
+    private string _challengeUsername = string.Empty;
+    private decimal? _availableBalance;
+    private decimal? _minStake;
+    private string _error = string.Empty;
+    private bool _submitting;
+    private Dictionary<string, string> _errors = new();
+    private string _userId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        _userId = state.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        if (!string.IsNullOrEmpty(_userId))
+        {
+            var wallet = await WalletService.GetBalanceAsync(_userId);
+            _availableBalance = wallet?.AvailableBalance;
+        }
+    }
+
+    private bool Validate()
+    {
+        _errors.Clear();
+        if (string.IsNullOrWhiteSpace(_title))
+            _errors["title"] = "Title is required.";
+        if (_eventDateLocal <= DateTime.Now)
+            _errors["date"] = "Event date must be in the future.";
+        if (_eventType == EventType.OneVsOne)
+        {
+            if (string.IsNullOrEmpty(_creatorSide))
+                _errors["side"] = "Please pick the side you are betting on.";
+            if (_creatorStake is null or <= 0)
+                _errors["creatorStake"] = "Your stake must be greater than zero.";
+            if (_opponentStake is null or <= 0)
+                _errors["opponentStake"] = "Opponent stake must be greater than zero.";
+            if (_creatorStake > 0 && _availableBalance.HasValue && _creatorStake > _availableBalance)
+                _errors["creatorStake"] = $"Insufficient balance. Available: P{_availableBalance.Value:N2}";
+        }
+        return _errors.Count == 0;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (!Validate()) return;
+        _submitting = true;
+        _error = string.Empty;
+        try
+        {
+            string? challengedUserId = null;
+            string? challengedUsername = null;
+            if (_eventType == EventType.OneVsOne && !string.IsNullOrWhiteSpace(_challengeUsername))
+            {
+                var challenged = await Db.KazeUsers
+                    .FirstOrDefaultAsync(u => u.Username == _challengeUsername.Trim());
+                if (challenged is null)
+                {
+                    _errors["challenge"] = $"User '{_challengeUsername.Trim()}' not found.";
+                    _submitting = false;
+                    return;
+                }
+                challengedUserId = challenged.Id;
+                challengedUsername = challenged.Username;
+            }
+
+            var ev = await EventService.CreateEventAsync(
+                _userId,
+                _title.Trim(),
+                _description.Trim(),
+                _eventDateLocal.ToUniversalTime(),
+                _eventType,
+                string.IsNullOrWhiteSpace(_sideA) ? "Side A" : _sideA.Trim(),
+                string.IsNullOrWhiteSpace(_sideB) ? "Side B" : _sideB.Trim(),
+                creatorSide: _eventType == EventType.OneVsOne ? _creatorSide : null,
+                creatorStake: _eventType == EventType.OneVsOne ? _creatorStake : null,
+                opponentStake: _eventType == EventType.OneVsOne ? _opponentStake : null,
+                challengedUserId: challengedUserId,
+                challengedUsername: challengedUsername,
+                minStake: _eventType == EventType.Pool ? _minStake : null);
+
+            Nav.NavigateTo($"/events/{ev.Id}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

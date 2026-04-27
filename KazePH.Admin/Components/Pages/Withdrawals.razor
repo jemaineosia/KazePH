@@ -4,6 +4,7 @@
 @inject KazeDbContext Db
 @inject IConfiguration Configuration
 @inject IWebHostEnvironment Env
+@inject AuthenticationStateProvider AuthState
 
 @using System.Text.Json
 @using KazePH.Core.Enums
@@ -270,6 +271,7 @@ else
     private bool _loading = true;
     private string _filter = "Pending";
     private string _adminBaseUrl = string.Empty;
+    private string _agentUsername = string.Empty;
     private List<WithdrawalRequest> _allRequests = new();
     private int _pendingCount;
 
@@ -292,6 +294,10 @@ else
     protected override async Task OnInitializedAsync()
     {
         _adminBaseUrl = Configuration["AdminApp:SelfBaseUrl"] ?? "http://localhost:5048";
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        _agentUsername = authState.User.FindFirst(ClaimTypes.Name)?.Value
+                      ?? authState.User.FindFirst(ClaimTypes.Email)?.Value
+                      ?? "Admin";
         await LoadAsync();
     }
 
@@ -355,9 +361,9 @@ else
             if (_approveTarget.Status == WithdrawalStatus.Pending)
                 await WithdrawalService.ProcessWithdrawalAsync(_approveTarget.Id);
 
-            await WithdrawalService.CompleteWithdrawalAsync(_approveTarget.Id, receiptUrl);
+            await WithdrawalService.CompleteWithdrawalAsync(_approveTarget.Id, receiptUrl, _agentUsername);
 
-            // Persist optional admin note (CompleteWithdrawalAsync doesn't accept one)
+            // Persist optional admin note
             if (!string.IsNullOrWhiteSpace(_adminNote))
             {
                 var req = await Db.WithdrawalRequests.FindAsync(_approveTarget.Id);
@@ -384,7 +390,7 @@ else
         _acting = true; _actionError = string.Empty;
         try
         {
-            await WithdrawalService.RejectWithdrawalAsync(_rejectTarget.Id, _adminNote);
+            await WithdrawalService.RejectWithdrawalAsync(_rejectTarget.Id, _adminNote, _agentUsername);
             CloseModals();
             await LoadAsync();
         }

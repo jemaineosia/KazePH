@@ -39,8 +39,8 @@ public interface IWithdrawalService
     /// Admin confirms the payout has been sent. Moves funds out of <c>PendingWithdrawalBalance</c>
     /// and attaches the admin's receipt URL.
     /// </summary>
-    Task CompleteWithdrawalAsync(Guid requestId, string? receiptUrl = null, CancellationToken cancellationToken = default);
+    Task CompleteWithdrawalAsync(Guid requestId, string? receiptUrl = null, string? processedByUsername = null, CancellationToken cancellationToken = default);
 
     /// <summary>Admin rejects the withdrawal request; returns funds to <c>AvailableBalance</c>.</summary>
-    Task RejectWithdrawalAsync(Guid requestId, string adminNote, CancellationToken cancellationToken = default);
+    Task RejectWithdrawalAsync(Guid requestId, string adminNote, string? processedByUsername = null, CancellationToken cancellationToken = default);
 }
