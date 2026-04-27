@@ -4,6 +4,10 @@
 @inject IWalletService WalletService
 @inject KazeDbContext Db
 @inject AuthenticationStateProvider AuthState
+@inject IConfiguration Config
+
+@using KazePH.Core.Enums
+@using System.Text.Json
 
 <PageTitle>Wallet – KazePH</PageTitle>
 
@@ -20,26 +24,80 @@ else
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="card-title mb-0"><i class="bi bi-wallet2 me-2 text-danger"></i>My Wallet</h5>
-                <a href="/wallet/topup" class="btn btn-primary btn-sm fw-semibold">
-                    <i class="bi bi-plus-circle me-1"></i>Cash In
-                </a>
+                <div class="d-flex gap-2">
+                    <a href="/wallet/topup" class="btn btn-primary btn-sm fw-semibold">
+                        <i class="bi bi-plus-circle me-1"></i>Cash In
+                    </a>
+                    <a href="/wallet/cashout" class="btn btn-outline-danger btn-sm fw-semibold">
+                        <i class="bi bi-arrow-up-circle me-1"></i>Cash Out
+                    </a>
+                </div>
             </div>
             <div class="row g-3">
-                <div class="col-6">
+                <div class="col-6 col-md-4">
                     <div class="p-3 rounded" style="background:#0f0f1e">
                         <div class="text-muted small mb-1">Available</div>
                         <div class="fs-3 fw-bold text-success">₱@(_wallet?.AvailableBalance.ToString("N2") ?? "0.00")</div>
                     </div>
                 </div>
-                <div class="col-6">
+                <div class="col-6 col-md-4">
                     <div class="p-3 rounded" style="background:#0f0f1e">
                         <div class="text-muted small mb-1">Locked in Bets</div>
                         <div class="fs-3 fw-bold text-warning">₱@(_wallet?.LockedBalance.ToString("N2") ?? "0.00")</div>
                     </div>
                 </div>
+                @if ((_wallet?.PendingWithdrawalBalance ?? 0) > 0)
+                {
+                    <div class="col-12 col-md-4">
+                        <div class="p-3 rounded" style="background:#0f0f1e">
+                            <div class="text-muted small mb-1">Pending Withdrawal</div>
+                            <div class="fs-3 fw-bold text-secondary">₱@(_wallet!.PendingWithdrawalBalance.ToString("N2"))</div>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
     </div>
+
+    <!-- Cash-Out History -->
+    <h6 class="fw-semibold mb-3">Cash-Out History</h6>
+    @if (_withdrawals.Count == 0)
+    {
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-arrow-up-circle fs-2 d-block mb-2"></i>No cash-out requests yet.
+        </div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-2 mb-4">
+            @foreach (var w in _withdrawals)
+            {
+                <div class="card p-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-semibold">₱@w.Amount.ToString("N2") <span class="text-muted small fw-normal">→ receive <span class="text-success">₱@w.NetAmount.ToString("N2")</span></span></div>
+                            <div class="text-muted small">@w.PaymentMethod &nbsp;·&nbsp; @DestinationSummary(w.DestinationDetails) &nbsp;·&nbsp; @w.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</div>
+                            @if (!string.IsNullOrEmpty(w.AdminNote))
+                            {
+                                <div class="text-muted small fst-italic mt-1"><i class="bi bi-chat-left-text me-1"></i>@w.AdminNote</div>
+                            }
+                        </div>
+                        <div class="text-end">
+                            <span class="badge @WithdrawalBadge(w.Status)">@w.Status</span>
+                            @if (!string.IsNullOrEmpty(w.ReceiptUrl))
+                            {
+                                <div class="mt-1">
+                                    <a href="@w.ReceiptUrl" target="_blank" class="btn btn-sm btn-outline-info py-0 px-2" style="font-size:0.72rem">
+                                        <i class="bi bi-image me-1"></i>Receipt
+                                    </a>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
 
     <!-- Cash-In History -->
     <h6 class="fw-semibold mb-3">Cash-In History</h6>
@@ -66,7 +124,7 @@ else
                                 <div class="text-muted small fst-italic mt-1"><i class="bi bi-chat-left-text me-1"></i>@t.AdminNote</div>
                             }
                         </div>
-                        <span class="badge @StatusBadge(t.Status)">@t.Status</span>
+                        <span class="badge @CashInBadge(t.Status)">@t.Status</span>
                     </div>
                 </div>
             }
@@ -78,6 +136,7 @@ else
     private bool _loading = true;
     private KazePH.Core.Models.Wallet? _wallet;
     private List<TopUpRequest> _topUps = new();
+    private List<WithdrawalRequest> _withdrawals = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -86,7 +145,13 @@ else
         if (string.IsNullOrEmpty(userId)) return;
 
         _wallet = await WalletService.GetBalanceAsync(userId);
+
         _topUps = await Db.TopUpRequests
+            .Where(r => r.UserId == userId)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync();
+
+        _withdrawals = await Db.WithdrawalRequests
             .Where(r => r.UserId == userId)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
@@ -94,10 +159,31 @@ else
         _loading = false;
     }
 
-    private static string StatusBadge(TopUpStatus status) => status switch
+    private static string CashInBadge(TopUpStatus status) => status switch
     {
         TopUpStatus.Approved => "bg-success",
         TopUpStatus.Rejected => "bg-danger",
         _ => "bg-warning text-dark"
     };
+
+    private static string WithdrawalBadge(WithdrawalStatus status) => status switch
+    {
+        WithdrawalStatus.Completed  => "bg-success",
+        WithdrawalStatus.Rejected   => "bg-danger",
+        WithdrawalStatus.Processing => "bg-info text-dark",
+        _ => "bg-warning text-dark"
+    };
+
+    private static string DestinationSummary(string json)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("accountNumber", out var num))
+                return num.GetString() ?? "—";
+        }
+        catch { }
+        return "—";
+    }
 }
+

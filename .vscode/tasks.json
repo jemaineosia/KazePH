@@ -2,10 +2,17 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Kill existing dotnet processes",
+      "type": "shell",
+      "command": "Get-Process -Name 'dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 500",
+      "presentation": { "reveal": "silent", "panel": "shared", "close": true }
+    },
+    {
       "label": "Run KazePH.Web",
       "type": "shell",
       "command": "dotnet",
       "args": ["run", "--project", "KazePH.Web"],
+      "dependsOn": ["Kill existing dotnet processes"],
       "group": "build",
       "presentation": { "panel": "dedicated", "group": "run" },
       "isBackground": true,
@@ -23,6 +30,7 @@
       "type": "shell",
       "command": "dotnet",
       "args": ["run", "--project", "KazePH.Admin"],
+      "dependsOn": ["Kill existing dotnet processes"],
       "group": "build",
       "presentation": { "panel": "dedicated", "group": "run" },
       "isBackground": true,

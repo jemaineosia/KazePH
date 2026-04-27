@@ -1,0 +1,244 @@
+@page "/wallet/cashout"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IWithdrawalService WithdrawalService
+@inject IWalletService WalletService
+@inject AuthenticationStateProvider AuthState
+@inject IConfiguration Config
+@inject NavigationManager Nav
+
+@using System.Text.Json
+@using KazePH.Core.Enums
+
+<PageTitle>Cash Out – KazePH</PageTitle>
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-danger" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else if (_submitted)
+{
+    <div class="text-center py-5">
+        <i class="bi bi-clock-history text-warning" style="font-size:3rem"></i>
+        <h5 class="mt-3 fw-bold">Withdrawal Submitted!</h5>
+        <p class="text-muted">
+            Your request of <strong class="text-white">₱@_amount.ToString("N2")</strong> is pending admin review.<br />
+            You will receive <strong class="text-success">₱@_netAmount.ToString("N2")</strong> after the @_feePercent% platform fee.
+        </p>
+        <a href="/wallet" class="btn btn-primary mt-2">Back to Wallet</a>
+    </div>
+}
+else
+{
+    <div class="d-flex align-items-center mb-4">
+        <a href="/wallet" class="btn btn-sm btn-outline-secondary me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h5 class="fw-bold mb-0"><i class="bi bi-arrow-up-circle me-2 text-danger"></i>Cash Out</h5>
+    </div>
+
+    <!-- Available Balance -->
+    <div class="card mb-4">
+        <div class="card-body py-3">
+            <div class="text-muted small mb-1">Available Balance</div>
+            <div class="fs-3 fw-bold text-success">₱@_availableBalance.ToString("N2")</div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>@_error</div>
+    }
+
+    <!-- Step 1: Payment Method -->
+    <div class="mb-4">
+        <div class="fw-semibold mb-2">Send via</div>
+        <div class="row g-2">
+            @foreach (var m in new[] { PaymentMethod.GCash, PaymentMethod.Bank, PaymentMethod.PayPal })
+            {
+                <div class="col-4">
+                    <button type="button"
+                            class="btn w-100 py-3 @(_paymentMethod == m ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="() => SelectMethod(m)">
+                        <i class="bi @MethodIcon(m) d-block fs-4 mb-1"></i>
+                        <span class="small fw-semibold">@m</span>
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Step 2: Destination Details -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="fw-semibold mb-3">
+                <i class="bi @MethodIcon(_paymentMethod) me-2 text-danger"></i>@_paymentMethod Details
+            </div>
+
+            @if (_paymentMethod == PaymentMethod.Bank)
+            {
+                <div class="mb-3">
+                    <label class="form-label">Bank Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" @bind="_bankName"
+                           placeholder="e.g. BDO, BPI, Metrobank, UnionBank" />
+                </div>
+            }
+
+            <div class="mb-3">
+                <label class="form-label">
+                    @(_paymentMethod == PaymentMethod.PayPal ? "PayPal Email" : "Account Number / Phone")
+                    <span class="text-danger">*</span>
+                </label>
+                <input type="text" class="form-control" @bind="_accountNumber"
+                       placeholder="@AccountNumberPlaceholder()" />
+            </div>
+
+            <div class="mb-0">
+                <label class="form-label">Account Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" @bind="_accountName"
+                       placeholder="Full name registered on the account" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: Amount + Fee Breakdown -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <label class="form-label fw-semibold">Amount to Withdraw (₱)</label>
+            <input type="number" class="form-control form-control-lg mb-3"
+                   @bind="_amount" @bind:event="oninput" @bind:after="RecalcFee"
+                   min="1" step="0.01" placeholder="0.00" />
+
+            @if (_amount > 0)
+            {
+                <div class="p-3 rounded" style="background:#0f0f1e">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted small">Gross Amount</span>
+                        <span class="fw-semibold">₱@_amount.ToString("N2")</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted small">Platform Fee (@_feePercent%)</span>
+                        <span class="text-warning">–₱@_fee.ToString("N2")</span>
+                    </div>
+                    <hr class="border-secondary my-2" />
+                    <div class="d-flex justify-content-between">
+                        <span class="fw-semibold">You'll receive</span>
+                        <span class="fw-bold fs-5 @(_netAmount > 0 ? "text-success" : "text-danger")">₱@_netAmount.ToString("N2")</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <button class="btn btn-primary w-100 py-3 fw-semibold" @onclick="SubmitAsync" disabled="@_submitting">
+        @if (_submitting)
+        {
+            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+        }
+        <i class="bi bi-arrow-up-circle me-1"></i>Submit Cash Out Request
+    </button>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _submitting;
+    private bool _submitted;
+    private string _error = string.Empty;
+    private string _userId = string.Empty;
+
+    private decimal _availableBalance;
+    private decimal _feePercent;
+    private decimal _amount;
+    private decimal _fee;
+    private decimal _netAmount;
+
+    private PaymentMethod _paymentMethod = PaymentMethod.GCash;
+    private string _accountNumber = string.Empty;
+    private string _accountName = string.Empty;
+    private string _bankName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _feePercent = Config.GetValue<decimal>("Withdrawal:FeePercent", 10m);
+
+        var state = await AuthState.GetAuthenticationStateAsync();
+        _userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        if (string.IsNullOrEmpty(_userId)) { Nav.NavigateTo("/auth/login"); return; }
+
+        var wallet = await WalletService.GetBalanceAsync(_userId);
+        _availableBalance = wallet?.AvailableBalance ?? 0;
+        _loading = false;
+    }
+
+    private void SelectMethod(PaymentMethod m)
+    {
+        _paymentMethod = m;
+        _accountNumber = string.Empty;
+        _accountName = string.Empty;
+        _bankName = string.Empty;
+    }
+
+    private Task RecalcFee()
+    {
+        _fee = Math.Round(_amount * _feePercent / 100m, 2);
+        _netAmount = _amount - _fee;
+        return Task.CompletedTask;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(_accountNumber))
+        { _error = "Please enter your account number / phone."; return; }
+        if (string.IsNullOrWhiteSpace(_accountName))
+        { _error = "Please enter your account name."; return; }
+        if (_paymentMethod == PaymentMethod.Bank && string.IsNullOrWhiteSpace(_bankName))
+        { _error = "Please enter your bank name."; return; }
+        if (_amount <= 0)
+        { _error = "Please enter a valid amount greater than zero."; return; }
+        if (_amount > _availableBalance)
+        { _error = "Insufficient balance."; return; }
+
+        RecalcFee();
+        if (_netAmount <= 0)
+        { _error = "Amount is too small — the platform fee exceeds the withdrawal amount."; return; }
+
+        _submitting = true;
+        try
+        {
+            var dest = _paymentMethod == PaymentMethod.Bank
+                ? JsonSerializer.Serialize(new { bankName = _bankName, accountNumber = _accountNumber, accountName = _accountName })
+                : JsonSerializer.Serialize(new { accountNumber = _accountNumber, accountName = _accountName });
+
+            await WithdrawalService.RequestWithdrawalAsync(_userId, _amount, _paymentMethod, dest);
+            _submitted = true;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private static string MethodIcon(PaymentMethod m) => m switch
+    {
+        PaymentMethod.GCash  => "bi-phone-fill",
+        PaymentMethod.Bank   => "bi-bank",
+        PaymentMethod.PayPal => "bi-paypal",
+        _ => "bi-credit-card"
+    };
+
+    private string AccountNumberPlaceholder() => _paymentMethod switch
+    {
+        PaymentMethod.GCash  => "09XX XXX XXXX",
+        PaymentMethod.Bank   => "Account number",
+        PaymentMethod.PayPal => "email@example.com",
+        _ => "Account number"
+    };
+}

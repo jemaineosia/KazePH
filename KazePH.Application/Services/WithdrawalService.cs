@@ -3,6 +3,7 @@ using KazePH.Core.Enums;
 using KazePH.Core.Models;
 using KazePH.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace KazePH.Application.Services;
 
@@ -15,13 +16,15 @@ public class WithdrawalService : IWithdrawalService
     private readonly KazeDbContext _db;
     private readonly IWalletService _walletService;
     private readonly IPlatformConfigService _config;
+    private readonly IConfiguration _appConfig;
 
     /// <summary>Initializes a new instance of <see cref="WithdrawalService"/>.</summary>
-    public WithdrawalService(KazeDbContext db, IWalletService walletService, IPlatformConfigService config)
+    public WithdrawalService(KazeDbContext db, IWalletService walletService, IPlatformConfigService config, IConfiguration appConfig)
     {
         _db = db;
         _walletService = walletService;
         _config = config;
+        _appConfig = appConfig;
     }
 
     /// <inheritdoc />
@@ -117,7 +120,11 @@ public class WithdrawalService : IWithdrawalService
 
     private async Task<decimal> CalculateFeeAsync(decimal amount, PaymentMethod paymentMethod, CancellationToken ct)
     {
-        var feePercent = await _config.GetDecimalConfigAsync("WithdrawalFeePercent", 0, ct);
+        // Prefer appsettings-configured fee; fall back to DB platform config
+        var feePercent = _appConfig.GetValue<decimal>("Withdrawal:FeePercent", 0);
+        if (feePercent == 0)
+            feePercent = await _config.GetDecimalConfigAsync("WithdrawalFeePercent", 0, ct);
+
         var feeFixed = await _config.GetDecimalConfigAsync("WithdrawalFeeFixed", 0, ct);
 
         var fee = (amount * feePercent / 100m) + feeFixed;
