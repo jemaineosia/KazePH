@@ -59,6 +59,45 @@ else
         </div>
     </div>
 
+    <!-- Betting Activity -->
+    <h6 class="fw-semibold mb-3">Betting Activity</h6>
+    @if (_txns.Count == 0)
+    {
+        <div class="text-center text-muted py-4 mb-4">
+            <i class="bi bi-controller fs-2 d-block mb-2"></i>No bet activity yet.
+        </div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-2 mb-4">
+            @foreach (var t in _txns)
+            {
+                <div class="card p-3 border-0" style="background:#12122a">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center"
+                                 style="width:36px;height:36px;background:#1a1a2e;flex-shrink:0">
+                                <i class="bi @TxnIcon(t.Type) @TxnColor(t.Type)"></i>
+                            </div>
+                            <div>
+                                <div class="fw-semibold small">@t.Description</div>
+                                <div class="text-muted" style="font-size:.75rem">
+                                    @t.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-bold @TxnColor(t.Type)">
+                                @TxnSign(t.Type)₱@t.Amount.ToString("N2")
+                            </div>
+                            <div class="text-muted" style="font-size:.72rem">@TxnLabel(t.Type)</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
     <!-- Cash-Out History -->
     <h6 class="fw-semibold mb-3">Cash-Out History</h6>
     @if (_withdrawals.Count == 0)
@@ -137,6 +176,7 @@ else
     private KazePH.Core.Models.Wallet? _wallet;
     private List<TopUpRequest> _topUps = new();
     private List<WithdrawalRequest> _withdrawals = new();
+    private List<WalletTransaction> _txns = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -154,6 +194,11 @@ else
         _withdrawals = await Db.WithdrawalRequests
             .Where(r => r.UserId == userId)
             .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync();
+
+        _txns = await Db.WalletTransactions
+            .Where(t => t.UserId == userId)
+            .OrderByDescending(t => t.CreatedAt)
             .ToListAsync();
 
         _loading = false;
@@ -185,5 +230,51 @@ else
         catch { }
         return "—";
     }
-}
 
+    private static string TxnIcon(WalletTransactionType type) => type switch
+    {
+        WalletTransactionType.WinningsReceived => "bi-trophy-fill",
+        WalletTransactionType.StakeForfeited   => "bi-x-circle-fill",
+        WalletTransactionType.DrawRefund       => "bi-arrow-counterclockwise",
+        WalletTransactionType.StakeLocked      => "bi-lock-fill",
+        WalletTransactionType.StakeReleased    => "bi-unlock-fill",
+        WalletTransactionType.TopUp            => "bi-plus-circle-fill",
+        WalletTransactionType.Withdrawal       => "bi-arrow-up-circle-fill",
+        _                                      => "bi-circle"
+    };
+
+    private static string TxnColor(WalletTransactionType type) => type switch
+    {
+        WalletTransactionType.WinningsReceived => "text-success",
+        WalletTransactionType.StakeForfeited   => "text-danger",
+        WalletTransactionType.DrawRefund       => "text-secondary",
+        WalletTransactionType.StakeLocked      => "text-warning",
+        WalletTransactionType.StakeReleased    => "text-info",
+        WalletTransactionType.TopUp            => "text-success",
+        WalletTransactionType.Withdrawal       => "text-danger",
+        _                                      => "text-muted"
+    };
+
+    private static string TxnSign(WalletTransactionType type) => type switch
+    {
+        WalletTransactionType.WinningsReceived => "+",
+        WalletTransactionType.DrawRefund       => "+",
+        WalletTransactionType.StakeReleased    => "+",
+        WalletTransactionType.TopUp            => "+",
+        WalletTransactionType.StakeForfeited   => "-",
+        WalletTransactionType.Withdrawal       => "-",
+        _                                      => ""
+    };
+
+    private static string TxnLabel(WalletTransactionType type) => type switch
+    {
+        WalletTransactionType.WinningsReceived => "Winnings",
+        WalletTransactionType.StakeForfeited   => "Lost",
+        WalletTransactionType.DrawRefund       => "Draw Refund",
+        WalletTransactionType.StakeLocked      => "Staked",
+        WalletTransactionType.StakeReleased    => "Released",
+        WalletTransactionType.TopUp            => "Cash In",
+        WalletTransactionType.Withdrawal       => "Cash Out",
+        _                                      => ""
+    };
+}

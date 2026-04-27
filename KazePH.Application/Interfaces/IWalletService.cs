@@ -1,3 +1,4 @@
+using KazePH.Core.Enums;
 using KazePH.Core.Models;
 
 namespace KazePH.Application.Interfaces;
@@ -31,4 +32,10 @@ public interface IWalletService
 
     /// <summary>Deducts <paramref name="amount"/> from <c>AvailableBalance</c> (e.g., on withdrawal).</summary>
     Task DebitFundsAsync(string userId, decimal amount, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends a <see cref="WalletTransaction"/> audit entry to the context.
+    /// Does <b>not</b> call SaveChanges — the caller is responsible for persisting.
+    /// </summary>
+    void Log(string userId, WalletTransactionType type, decimal amount, string description, Guid? eventId = null);
 }

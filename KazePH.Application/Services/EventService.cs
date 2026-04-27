@@ -70,6 +70,8 @@ public class EventService : IEventService
             try
             {
                 await _walletService.LockFundsAsync(creatorId, creatorStake.Value, cancellationToken);
+                _walletService.Log(creatorId, WalletTransactionType.StakeLocked, creatorStake.Value,
+                    $"Stake locked: {ev.Title}", ev.Id);
 
                 _db.Events.Add(ev);
                 await _db.SaveChangesAsync(cancellationToken);
@@ -130,6 +132,8 @@ public class EventService : IEventService
         try
         {
             await _walletService.LockFundsAsync(opponentId, opponentStake, cancellationToken);
+            _walletService.Log(opponentId, WalletTransactionType.StakeLocked, opponentStake,
+                $"Stake locked: {ev.Title}", ev.Id);
 
             _db.BetEntries.Add(new BetEntry
             {
@@ -174,8 +178,235 @@ public class EventService : IEventService
     public Task<Event?> GetEventAsync(Guid eventId, CancellationToken cancellationToken = default)
         => _db.Events
               .Include(e => e.Creator)
-              .Include(e => e.BetEntries)
+              .Include(e => e.BetEntries).ThenInclude(b => b.User)
+              .Include(e => e.Result)
+              .Include(e => e.ResultDeclarations)
               .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task SubmitDeclarationAsync(
+        Guid eventId,
+        string userId,
+        string declaredWinningSide,
+        CancellationToken cancellationToken = default)
+    {
+        var ev = await _db.Events
+            .Include(e => e.BetEntries)
+            .Include(e => e.ResultDeclarations)
+            .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken)
+            ?? throw new InvalidOperationException("Event not found.");
+
+        if (ev.EventType != EventType.OneVsOne)
+            throw new InvalidOperationException("Only 1v1 events use the dual-declaration flow.");
+        if (ev.Status != EventStatus.Active)
+            throw new InvalidOperationException("Can only submit a declaration for an active event.");
+        if (declaredWinningSide != "A" && declaredWinningSide != "B")
+            throw new InvalidOperationException("Declared winning side must be 'A' or 'B'.");
+
+        var myEntry = ev.BetEntries.FirstOrDefault(b => b.UserId == userId)
+            ?? throw new InvalidOperationException("You are not a participant in this event.");
+        if (ev.ResultDeclarations.Any(d => d.DeclaringUserId == userId))
+            throw new InvalidOperationException("You have already submitted your declaration.");
+
+        await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            _db.ResultDeclarations.Add(new ResultDeclaration
+            {
+                Id                  = Guid.NewGuid(),
+                EventId             = ev.Id,
+                DeclaringUserId     = userId,
+                DeclaredWinningSide = declaredWinningSide,
+                DeclaredAt          = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync(cancellationToken);
+
+            // Re-read declarations now that ours is saved
+            var allDeclarations = await _db.ResultDeclarations
+                .Where(d => d.EventId == ev.Id)
+                .ToListAsync(cancellationToken);
+
+            if (allDeclarations.Count == 2)
+            {
+                var decA = allDeclarations.First(d =>
+                    ev.BetEntries.First(b => b.UserId == d.DeclaringUserId).Side == "A");
+                var decB = allDeclarations.First(d =>
+                    ev.BetEntries.First(b => b.UserId == d.DeclaringUserId).Side == "B");
+
+                if (decA.DeclaredWinningSide == decB.DeclaredWinningSide)
+                {
+                    // Both agree — settle the winner
+                    await SettleWinnerInternalAsync(ev, decA.DeclaredWinningSide, cancellationToken);
+                }
+                else if (decA.DeclaredWinningSide == "A" && decB.DeclaredWinningSide == "B")
+                {
+                    // Both claim victory — escalate to dispute
+                    _db.Disputes.Add(new Dispute
+                    {
+                        Id             = Guid.NewGuid(),
+                        EventId        = ev.Id,
+                        OpenedByUserId = ev.CreatorId,
+                        Status         = DisputeStatus.Open,
+                        CreatedAt      = DateTime.UtcNow
+                    });
+                    ev.Status = EventStatus.Disputed;
+                    await _db.SaveChangesAsync(cancellationToken);
+                }
+                else
+                {
+                    // Both declare they lost — draw
+                    await SettleDrawInternalAsync(ev, cancellationToken);
+                }
+            }
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private async Task SettleWinnerInternalAsync(Event ev, string winningSide, CancellationToken ct)
+    {
+        var winners        = ev.BetEntries.Where(b => b.Side == winningSide).ToList();
+        var losers         = ev.BetEntries.Where(b => b.Side != winningSide).ToList();
+        decimal loserPot   = losers.Sum(b => b.Amount);
+        decimal winnerPot  = winners.Sum(b => b.Amount);
+        var winningSideName = winningSide == "A" ? ev.SideA : ev.SideB;
+        var losingSideName  = winningSide == "A" ? ev.SideB : ev.SideA;
+
+        foreach (var w in winners)
+        {
+            await _walletService.ReleaseFundsAsync(w.UserId, w.Amount, ct);
+            _walletService.Log(w.UserId, WalletTransactionType.StakeReleased, w.Amount,
+                $"Stake returned: {ev.Title}", ev.Id);
+            if (loserPot > 0 && winnerPot > 0)
+            {
+                var share = Math.Round((w.Amount / winnerPot) * loserPot, 2, MidpointRounding.ToEven);
+                await _walletService.CreditFundsAsync(w.UserId, share, ct);
+                _walletService.Log(w.UserId, WalletTransactionType.WinningsReceived, share,
+                    $"Won ({winningSideName}): {ev.Title}", ev.Id);
+            }
+        }
+
+        foreach (var l in losers)
+        {
+            var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.UserId == l.UserId, ct)
+                ?? throw new InvalidOperationException($"Wallet not found for user {l.UserId}.");
+            wallet.LockedBalance -= l.Amount;
+            wallet.UpdatedAt = DateTime.UtcNow;
+            _walletService.Log(l.UserId, WalletTransactionType.StakeForfeited, l.Amount,
+                $"Lost ({losingSideName}): {ev.Title}", ev.Id);
+        }
+        await _db.SaveChangesAsync(ct);
+
+        _db.EventResults.Add(new EventResult
+        {
+            Id                  = Guid.NewGuid(),
+            EventId             = ev.Id,
+            DeclaredWinningSide = winningSide,
+            DeclaredAt          = DateTime.UtcNow
+        });
+        ev.Status = EventStatus.Completed;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private async Task SettleDrawInternalAsync(Event ev, CancellationToken ct)
+    {
+        foreach (var entry in ev.BetEntries)
+        {
+            await _walletService.ReleaseFundsAsync(entry.UserId, entry.Amount, ct);
+            _walletService.Log(entry.UserId, WalletTransactionType.DrawRefund, entry.Amount,
+                $"Draw refund: {ev.Title}", ev.Id);
+        }
+
+        _db.EventResults.Add(new EventResult
+        {
+            Id                  = Guid.NewGuid(),
+            EventId             = ev.Id,
+            DeclaredWinningSide = "Draw",
+            DeclaredAt          = DateTime.UtcNow
+        });
+        ev.Status = EventStatus.Completed;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task DeclareResultAsync(
+        Guid eventId,
+        string declaringUserId,
+        string winningSide,
+        CancellationToken cancellationToken = default)
+    {
+        var ev = await _db.Events
+            .Include(e => e.BetEntries)
+            .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken)
+            ?? throw new InvalidOperationException("Event not found.");
+
+        if (ev.Status != EventStatus.Active)
+            throw new InvalidOperationException("Only active events can have a result declared.");
+        if (ev.CreatorId != declaringUserId)
+            throw new InvalidOperationException("Only the event creator can declare the result.");
+        if (winningSide != "A" && winningSide != "B")
+            throw new InvalidOperationException("Winning side must be 'A' or 'B'.");
+
+        var winners = ev.BetEntries.Where(b => b.Side == winningSide).ToList();
+        var losers  = ev.BetEntries.Where(b => b.Side != winningSide).ToList();
+        decimal loserPot  = losers.Sum(b => b.Amount);
+        decimal winnerPot = winners.Sum(b => b.Amount);
+
+        await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // Release each winner's stake and credit their proportional share of the loser pot
+            var winningSideName2 = winningSide == "A" ? ev.SideA : ev.SideB;
+            var losingSideName2  = winningSide == "A" ? ev.SideB : ev.SideA;
+            foreach (var w in winners)
+            {
+                await _walletService.ReleaseFundsAsync(w.UserId, w.Amount, cancellationToken);
+                _walletService.Log(w.UserId, WalletTransactionType.StakeReleased, w.Amount,
+                    $"Stake returned: {ev.Title}", ev.Id);
+                if (loserPot > 0 && winnerPot > 0)
+                {
+                    var share = Math.Round((w.Amount / winnerPot) * loserPot, 2, MidpointRounding.ToEven);
+                    await _walletService.CreditFundsAsync(w.UserId, share, cancellationToken);
+                    _walletService.Log(w.UserId, WalletTransactionType.WinningsReceived, share,
+                        $"Won ({winningSideName2}): {ev.Title}", ev.Id);
+                }
+            }
+
+            // Forfeit losers' locked stakes (deducted from locked balance)
+            foreach (var l in losers)
+            {
+                var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.UserId == l.UserId, cancellationToken)
+                    ?? throw new InvalidOperationException($"Wallet not found for user {l.UserId}.");
+                wallet.LockedBalance -= l.Amount;
+                wallet.UpdatedAt = DateTime.UtcNow;
+                _walletService.Log(l.UserId, WalletTransactionType.StakeForfeited, l.Amount,
+                    $"Lost ({losingSideName2}): {ev.Title}", ev.Id);
+            }
+            await _db.SaveChangesAsync(cancellationToken);
+
+            _db.EventResults.Add(new EventResult
+            {
+                Id                  = Guid.NewGuid(),
+                EventId             = ev.Id,
+                DeclaredWinningSide = winningSide,
+                DeclaredAt          = DateTime.UtcNow
+            });
+            ev.Status = EventStatus.Completed;
+            await _db.SaveChangesAsync(cancellationToken);
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
 
     /// <inheritdoc />
     public async Task CancelEventAsync(Guid eventId, CancellationToken cancellationToken = default)
@@ -190,7 +421,11 @@ public class EventService : IEventService
 
         // Return locked funds to each participant
         foreach (var entry in ev.BetEntries)
+        {
             await _walletService.ReleaseFundsAsync(entry.UserId, entry.Amount, cancellationToken);
+            _walletService.Log(entry.UserId, WalletTransactionType.StakeReleased, entry.Amount,
+                $"Cancelled: {ev.Title}", ev.Id);
+        }
 
         ev.Status = EventStatus.Cancelled;
         await _db.SaveChangesAsync(cancellationToken);

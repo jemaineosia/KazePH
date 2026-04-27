@@ -1,4 +1,5 @@
 using KazePH.Application.Interfaces;
+using KazePH.Core.Enums;
 using KazePH.Core.Models;
 using KazePH.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -70,5 +71,20 @@ public class WalletService : IWalletService
     {
         var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.UserId == userId, ct);
         return wallet ?? throw new InvalidOperationException($"Wallet not found for user '{userId}'.");
+    }
+
+    /// <inheritdoc />
+    public void Log(string userId, WalletTransactionType type, decimal amount, string description, Guid? eventId = null)
+    {
+        _db.WalletTransactions.Add(new WalletTransaction
+        {
+            Id          = Guid.NewGuid(),
+            UserId      = userId,
+            Type        = type,
+            Amount      = amount,
+            Description = description,
+            EventId     = eventId,
+            CreatedAt   = DateTime.UtcNow
+        });
     }
 }

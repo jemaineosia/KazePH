@@ -65,4 +65,10 @@ public class Event
 
     /// <summary>All bet entries placed on this event.</summary>
     public ICollection<BetEntry> BetEntries { get; set; } = new List<BetEntry>();
+
+    /// <summary>The declared result of the event once completed.</summary>
+    public EventResult? Result { get; set; }
+
+    /// <summary>Individual result declarations from each 1v1 participant.</summary>
+    public ICollection<ResultDeclaration> ResultDeclarations { get; set; } = new List<ResultDeclaration>();
 }

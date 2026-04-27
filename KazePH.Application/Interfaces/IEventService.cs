@@ -60,4 +60,25 @@ public interface IEventService
     /// <param name="eventId">The event's primary key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task CancelEventAsync(Guid eventId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Submits one player's declaration of the result for a 1v1 event.
+    /// Once both players have declared, the system auto-resolves:
+    /// <list type="bullet">
+    ///   <item>Both agree on same winner → payouts settled, event Completed.</item>
+    ///   <item>Both claim they won → event escalated to Disputed, admin reviews.</item>
+    ///   <item>Both claim they lost → draw, all stakes returned, event Completed.</item>
+    /// </list>
+    /// </summary>
+    Task SubmitDeclarationAsync(Guid eventId, string userId, string declaredWinningSide, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Declares the winning side for an active event, settles all payouts atomically,
+    /// and marks the event as Completed. Only the event creator may call this.
+    /// Winners receive their stake back plus a proportional share of the losing pool.
+    /// </summary>
+    /// <param name="eventId">The active event to settle.</param>
+    /// <param name="declaringUserId">Identity ID of the user declaring the result (must be creator).</param>
+    /// <param name="winningSide">"A" or "B" — the side that won.</param>
+    Task DeclareResultAsync(Guid eventId, string declaringUserId, string winningSide, CancellationToken cancellationToken = default);
 }

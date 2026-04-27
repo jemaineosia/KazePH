@@ -289,6 +289,12 @@ else
                     _submitting = false;
                     return;
                 }
+                if (challenged.Id == _userId)
+                {
+                    _errors["challenge"] = "You can't challenge yourself.";
+                    _submitting = false;
+                    return;
+                }
                 challengedUserId = challenged.Id;
                 challengedUsername = challenged.Username;
             }

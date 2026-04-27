@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @inject IEventService EventService
 @inject IWalletService WalletService
+@inject IDisputeService DisputeService
+@inject KazeDbContext Db
 @inject AuthenticationStateProvider AuthState
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -248,6 +250,174 @@ else
         </div>
     }
 
+    @* ── Completed: result banner ───────────────────────────────────────── *@
+    @if (_event.Status == EventStatus.Completed && _event.Result is not null)
+    {
+        @if (_event.Result.DeclaredWinningSide == "Draw")
+        {
+            <div class="card border-0 mb-4 text-center" style="background:#12122a;border:2px solid #6c757d !important">
+                <div class="card-body py-4">
+                    <div class="text-muted small mb-1">Result Declared</div>
+                    <div class="fs-2 fw-bold text-secondary mb-1">
+                        <i class="bi bi-handshake me-2"></i>It's a Draw!
+                    </div>
+                    <div class="text-muted small mb-1">All stakes have been returned to both players.</div>
+                    <div class="text-muted small">
+                        <i class="bi bi-calendar3 me-1"></i>@_event.Result.DeclaredAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card border-0 mb-4 text-center" style="background:#12122a;border:2px solid @(_event.Result.DeclaredWinningSide == "A" ? "#28a745" : "#dc3545") !important">
+                <div class="card-body py-4">
+                    <div class="text-muted small mb-1">Result Declared</div>
+                    <div class="fs-2 fw-bold @(_event.Result.DeclaredWinningSide == "A" ? "text-success" : "text-danger") mb-1">
+                        <i class="bi bi-trophy-fill me-2"></i>@(_event.Result.DeclaredWinningSide == "A" ? _event.SideA : _event.SideB) Wins!
+                    </div>
+                    <div class="text-muted small">
+                        <i class="bi bi-calendar3 me-1"></i>@_event.Result.DeclaredAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    @* ── Disputed: conflict banner + evidence form ────────────────────── *@
+    @if (_event.Status == EventStatus.Disputed)
+    {
+        <div class="card border-0 mb-3" style="background:#12122a;border:2px solid #dc3545 !important">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="bi bi-shield-exclamation text-danger fs-4"></i>
+                    <h6 class="fw-bold mb-0 text-danger">Both Players Claimed Victory</h6>
+                </div>
+                <p class="text-muted small mb-0">
+                    A dispute has been opened. Both players must submit proof below.
+                    An admin will review the evidence and declare the final result.
+                </p>
+            </div>
+        </div>
+
+        @if (_event.BetEntries.Any(b => b.UserId == _userId))
+        {
+            @if (_myEvidenceSubmitted)
+            {
+                <div class="alert alert-success mb-4">
+                    <i class="bi bi-check-circle-fill me-1"></i>
+                    Your evidence has been submitted. Waiting for admin review.
+                </div>
+            }
+            else
+            {
+                <div class="card border-0 mb-4" style="background:#12122a">
+                    <div class="card-body p-4">
+                        <h6 class="fw-semibold mb-3"><i class="bi bi-camera me-2"></i>Submit Your Proof</h6>
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Screenshot / Photo URL <span class="text-danger">*</span></label>
+                            <input class="form-control kaze-input" placeholder="https://imgur.com/..." @bind="_evidenceUrl" />
+                            <div class="form-text">Upload a screenshot to Imgur, Google Drive, etc. and paste the link here.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Description <span class="text-muted fw-normal">(optional)</span></label>
+                            <textarea class="form-control kaze-input" rows="2"
+                                      placeholder="Explain why you won..."
+                                      @bind="_evidenceDescription"></textarea>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_evidenceError))
+                        {
+                            <div class="alert alert-danger py-2 mb-2">@_evidenceError</div>
+                        }
+                        <button class="btn btn-danger w-100" @onclick="SubmitEvidenceAsync" disabled="@_submittingEvidence">
+                            @if (_submittingEvidence) { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
+                            <i class="bi bi-upload me-1"></i>Submit Evidence
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    @* ── Active 1v1: dual declaration panel ──────────────────────────── *@
+    @if (_event.EventType == EventType.OneVsOne && _event.Status == EventStatus.Active)
+    {
+        @if (_event.BetEntries.Any(b => b.UserId == _userId))
+        {
+            var _myDecl = _event.ResultDeclarations.FirstOrDefault(d => d.DeclaringUserId == _userId);
+            var _oppEntry = _event.BetEntries.FirstOrDefault(b => b.UserId != _userId);
+            var _oppDecl = _oppEntry != null
+                ? _event.ResultDeclarations.FirstOrDefault(d => d.DeclaringUserId == _oppEntry.UserId)
+                : null;
+            @if (_myDecl == null)
+            {
+                <div class="card border-0 mb-4" style="background:#12122a;border:1px solid #e94560 !important">
+                    <div class="card-body p-4">
+                        <h6 class="fw-bold mb-1"><i class="bi bi-flag-fill text-danger me-2"></i>What was the result?</h6>
+                        <p class="text-muted small mb-3">
+                            Both players must declare. If you both agree, payouts are automatic.
+                            If you both claim to have won, an admin will review the evidence.
+                        </p>
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <div class="card border-2 @(_newDeclareSide == "A" ? "border-success" : "border-secondary") text-center"
+                                     style="background:#0f0f1e;cursor:pointer"
+                                     @onclick='() => _newDeclareSide = "A"'>
+                                    <div class="card-body py-3 @(_newDeclareSide == "A" ? "text-white" : "text-muted")">
+                                        <div class="fw-bold text-success mb-1">@_event.SideA won</div>
+                                        <div class="small">@SideCount("A") entries</div>
+                                        @if (_newDeclareSide == "A") { <i class="bi bi-check-circle-fill text-success mt-2 d-block"></i> }
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="card border-2 @(_newDeclareSide == "B" ? "border-danger" : "border-secondary") text-center"
+                                     style="background:#0f0f1e;cursor:pointer"
+                                     @onclick='() => _newDeclareSide = "B"'>
+                                    <div class="card-body py-3 @(_newDeclareSide == "B" ? "text-white" : "text-muted")">
+                                        <div class="fw-bold text-danger mb-1">@_event.SideB won</div>
+                                        <div class="small">@SideCount("B") entries</div>
+                                        @if (_newDeclareSide == "B") { <i class="bi bi-check-circle-fill text-danger mt-2 d-block"></i> }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_declareNewError))
+                        {
+                            <div class="alert alert-danger py-2 mb-2">@_declareNewError</div>
+                        }
+                        @if (!string.IsNullOrEmpty(_newDeclareSide))
+                        {
+                            <button class="btn btn-danger w-100 fw-bold" @onclick="SubmitDeclarationAsync" disabled="@_declaringNew">
+                                @if (_declaringNew) { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
+                                <i class="bi bi-send-fill me-1"></i>
+                                Declare <strong>@(_newDeclareSide == "A" ? _event.SideA : _event.SideB)</strong> Won
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card border-0 mb-4" style="background:#12122a">
+                    <div class="card-body p-4 text-center">
+                        <i class="bi bi-hourglass-split text-warning fs-3 mb-2 d-block"></i>
+                        <div class="fw-semibold mb-1">Your declaration is in</div>
+                        <div class="text-muted small mb-2">
+                            You declared: <strong class="@(_myDecl.DeclaredWinningSide == "A" ? "text-success" : "text-danger")">
+                                @(_myDecl.DeclaredWinningSide == "A" ? _event.SideA : _event.SideB) won
+                            </strong>
+                        </div>
+                        @if (_oppDecl == null)
+                        {
+                            <div class="text-muted small">Waiting for @(_oppEntry?.User?.Username ?? "your opponent") to declare...</div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    }
+
     <!-- ── Entries list ─────────────────────────────────────────────────── -->
     @if (_event.BetEntries.Any())
     {
@@ -299,6 +469,19 @@ else
     private bool _copied;
     private string _shareUrl = string.Empty;
 
+    // Declaration flow
+    private string _newDeclareSide = string.Empty;
+    private bool _declaringNew;
+    private string _declareNewError = string.Empty;
+
+    // Dispute evidence
+    private Guid _disputeId;
+    private string _evidenceUrl = string.Empty;
+    private string _evidenceDescription = string.Empty;
+    private bool _submittingEvidence;
+    private string _evidenceError = string.Empty;
+    private bool _myEvidenceSubmitted;
+
     protected override async Task OnInitializedAsync()
     {
         var state = await AuthState.GetAuthenticationStateAsync();
@@ -312,6 +495,18 @@ else
         _shareUrl = Nav.ToAbsoluteUri($"/events/{EventId}").ToString();
 
         _alreadyJoined = _event.BetEntries.Any(b => b.UserId == _userId);
+
+        if (_event.Status == EventStatus.Disputed)
+        {
+            var dispute = await Db.Disputes
+                .FirstOrDefaultAsync(d => d.EventId == _event.Id);
+            if (dispute != null)
+            {
+                _disputeId = dispute.Id;
+                _myEvidenceSubmitted = await Db.DisputeEvidence
+                    .AnyAsync(e => e.DisputeId == dispute.Id && e.SubmittedByUserId == _userId);
+            }
+        }
 
         if (!string.IsNullOrEmpty(_userId) && _event.CreatorId != _userId)
         {
@@ -346,6 +541,59 @@ else
         _copied = true;
         await Task.Delay(2000);
         _copied = false;
+    }
+
+    private async Task SubmitDeclarationAsync()
+    {
+        _declaringNew = true;
+        _declareNewError = string.Empty;
+        try
+        {
+            await EventService.SubmitDeclarationAsync(EventId, _userId, _newDeclareSide);
+            _event = await EventService.GetEventAsync(EventId);
+            // Re-check dispute
+            if (_event?.Status == EventStatus.Disputed)
+            {
+                var dispute = await Db.Disputes.FirstOrDefaultAsync(d => d.EventId == EventId);
+                if (dispute != null) _disputeId = dispute.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            _declareNewError = ex.Message;
+        }
+        finally
+        {
+            _declaringNew = false;
+        }
+    }
+
+    private async Task SubmitEvidenceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_evidenceUrl))
+        {
+            _evidenceError = "Please provide a URL to your screenshot or proof.";
+            return;
+        }
+        _submittingEvidence = true;
+        _evidenceError = string.Empty;
+        try
+        {
+            await DisputeService.SubmitEvidenceAsync(
+                _disputeId,
+                _userId,
+                _evidenceUrl.Trim(),
+                string.IsNullOrWhiteSpace(_evidenceDescription) ? null : _evidenceDescription.Trim());
+            _myEvidenceSubmitted = true;
+        }
+        catch (Exception ex)
+        {
+            _evidenceError = ex.Message;
+        }
+        finally
+        {
+            _submittingEvidence = false;
+        }
     }
 
     private int SideCount(string side) =>

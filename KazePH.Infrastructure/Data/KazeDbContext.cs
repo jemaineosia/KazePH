@@ -37,6 +37,9 @@ public class KazeDbContext : IdentityDbContext<ApplicationUser>
     /// <summary>Declared results for completed events.</summary>
     public DbSet<EventResult> EventResults { get; set; } = null!;
 
+    /// <summary>Per-player result declarations for 1v1 events (dual-declaration flow).</summary>
+    public DbSet<ResultDeclaration> ResultDeclarations { get; set; } = null!;
+
     /// <summary>Disputes raised by participants against event outcomes.</summary>
     public DbSet<Dispute> Disputes { get; set; } = null!;
 
@@ -51,6 +54,9 @@ public class KazeDbContext : IdentityDbContext<ApplicationUser>
 
     /// <summary>In-app notifications for users.</summary>
     public DbSet<Notification> Notifications { get; set; } = null!;
+
+    /// <summary>Wallet transaction audit log.</summary>
+    public DbSet<WalletTransaction> WalletTransactions { get; set; } = null!;
 
     /// <summary>Admin-managed platform configuration key-value pairs.</summary>
     public DbSet<PlatformConfig> PlatformConfigs { get; set; } = null!;
@@ -68,12 +74,14 @@ public class KazeDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Event>().ToTable("events");
         builder.Entity<BetEntry>().ToTable("bet_entries");
         builder.Entity<EventResult>().ToTable("event_results");
+        builder.Entity<ResultDeclaration>().ToTable("result_declarations");
         builder.Entity<Dispute>().ToTable("disputes");
         builder.Entity<DisputeEvidence>().ToTable("dispute_evidence");
         builder.Entity<Friendship>().ToTable("friendships");
         builder.Entity<ChatMessage>().ToTable("chat_messages");
         builder.Entity<Notification>().ToTable("notifications");
         builder.Entity<PlatformConfig>().ToTable("platform_configs");
+        builder.Entity<WalletTransaction>().ToTable("wallet_transactions");
 
         // ── User ─────────────────────────────────────────────────────────────
         builder.Entity<User>(e =>
@@ -84,6 +92,24 @@ public class KazeDbContext : IdentityDbContext<ApplicationUser>
             e.Property(u => u.FullName).HasMaxLength(200).IsRequired();
             e.Property(u => u.Username).HasMaxLength(50).IsRequired();
             e.Property(u => u.PhoneNumber).HasMaxLength(20).IsRequired();
+        });
+
+        // ── WalletTransaction ─────────────────────────────────────────────
+        builder.Entity<WalletTransaction>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Amount).HasPrecision(18, 4);
+            e.Property(t => t.Description).HasMaxLength(500);
+            e.HasIndex(t => t.UserId);
+            e.HasIndex(t => t.CreatedAt);
+            e.HasOne(t => t.User)
+             .WithMany()
+             .HasForeignKey(t => t.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(t => t.Event)
+             .WithMany()
+             .HasForeignKey(t => t.EventId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Wallet ───────────────────────────────────────────────────────────
@@ -158,6 +184,21 @@ public class KazeDbContext : IdentityDbContext<ApplicationUser>
              .OnDelete(DeleteBehavior.Restrict);
         });
 
+        // ── ResultDeclaration ────────────────────────────────────────────────
+        builder.Entity<ResultDeclaration>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => new { r.EventId, r.DeclaringUserId }).IsUnique();
+            e.HasOne(r => r.Event)
+             .WithMany(ev => ev.ResultDeclarations)
+             .HasForeignKey(r => r.EventId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(r => r.DeclaringUser)
+             .WithMany()
+             .HasForeignKey(r => r.DeclaringUserId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
         // ── EventResult ──────────────────────────────────────────────────────
         builder.Entity<EventResult>(e =>
         {
@@ -165,8 +206,8 @@ public class KazeDbContext : IdentityDbContext<ApplicationUser>
             e.HasIndex(r => r.EventId).IsUnique();
             e.Property(r => r.DeclaredWinningSide).HasMaxLength(100).IsRequired();
             e.HasOne(r => r.Event)
-             .WithMany()
-             .HasForeignKey(r => r.EventId)
+             .WithOne(ev => ev.Result)
+             .HasForeignKey<EventResult>(r => r.EventId)
              .OnDelete(DeleteBehavior.Cascade);
         });
 
