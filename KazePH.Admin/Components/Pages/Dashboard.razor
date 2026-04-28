@@ -398,91 +398,63 @@ else
 
         var today = DateTime.UtcNow.Date;
 
-        var usersTask        = Db.KazeUsers.CountAsync();
-        var newTodayTask     = Db.KazeUsers.CountAsync(u => u.CreatedAt >= today);
-        var walletSumsTask   = Db.Wallets.GroupBy(w => 1).Select(g => new {
-                                   Available = g.Sum(w => w.AvailableBalance),
-                                   Locked    = g.Sum(w => w.LockedBalance),
-                                   Pending   = g.Sum(w => w.PendingWithdrawalBalance)
-                               }).FirstOrDefaultAsync();
+        _totalUsers    = await Db.KazeUsers.CountAsync();
+        _newUsersToday = await Db.KazeUsers.CountAsync(u => u.CreatedAt >= today);
 
-        var depositCountTask  = Db.TopUpRequests.CountAsync(t => t.Status == TopUpStatus.Pending);
-        var depositAmtTask    = Db.TopUpRequests.Where(t => t.Status == TopUpStatus.Pending).SumAsync(t => (decimal?)t.Amount) ?? Task.FromResult((decimal?)0);
-        var withdrawCountTask = Db.WithdrawalRequests.CountAsync(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing);
-        var withdrawAmtTask   = Db.WithdrawalRequests.Where(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing).SumAsync(w => (decimal?)w.Amount) ?? Task.FromResult((decimal?)0);
-        var disputeCountTask  = Db.Disputes.CountAsync(d => d.Status != DisputeStatus.Resolved);
+        var ws = await Db.Wallets.GroupBy(w => 1).Select(g => new {
+            Available = g.Sum(w => w.AvailableBalance),
+            Locked    = g.Sum(w => w.LockedBalance),
+            Pending   = g.Sum(w => w.PendingWithdrawalBalance)
+        }).FirstOrDefaultAsync();
+        _floatAvailable = ws?.Available ?? 0;
+        _floatLocked    = ws?.Locked ?? 0;
+        _floatPending   = ws?.Pending ?? 0;
+        _platformFloat  = _floatAvailable + _floatLocked + _floatPending;
 
-        var openEventsTask   = Db.Events.CountAsync(e => e.Status == EventStatus.Open);
-        var activeEventsTask = Db.Events.CountAsync(e => e.Status == EventStatus.Active);
+        _pendingDeposits      = await Db.TopUpRequests.CountAsync(t => t.Status == TopUpStatus.Pending);
+        _pendingDepositAmount = (await Db.TopUpRequests.Where(t => t.Status == TopUpStatus.Pending).SumAsync(t => (decimal?)t.Amount)) ?? 0;
 
-        var recentDepositsTask    = Db.TopUpRequests.Include(t => t.User)
-                                      .Where(t => t.Status == TopUpStatus.Pending)
-                                      .OrderByDescending(t => t.CreatedAt).Take(5).ToListAsync();
-        var recentWithdrawalsTask = Db.WithdrawalRequests.Include(w => w.User)
-                                      .Where(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing)
-                                      .OrderByDescending(w => w.CreatedAt).Take(5).ToListAsync();
-        var recentDisputesTask    = Db.Disputes.Include(d => d.Event).Include(d => d.OpenedByUser)
-                                      .Where(d => d.Status != DisputeStatus.Resolved)
-                                      .OrderByDescending(d => d.CreatedAt).Take(5).ToListAsync();
-        var liveEventsTask        = Db.Events.Include(e => e.BetEntries)
-                                      .Where(e => e.Status == EventStatus.Open || e.Status == EventStatus.Active)
-                                      .OrderByDescending(e => e.CreatedAt).Take(6).ToListAsync();
+        _pendingWithdrawals       = await Db.WithdrawalRequests.CountAsync(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing);
+        _pendingWithdrawalAmount  = (await Db.WithdrawalRequests.Where(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing).SumAsync(w => (decimal?)w.Amount)) ?? 0;
 
-        var rankGroupTask  = Db.KazeUsers.GroupBy(u => u.RankTier)
-                               .Select(g => new { Tier = g.Key, Count = g.Count() }).ToListAsync();
-        var statusGroupTask = Db.Events.GroupBy(e => e.Status)
-                               .Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+        _openDisputes = await Db.Disputes.CountAsync(d => d.Status != DisputeStatus.Resolved);
 
-        var totalDepositedTask  = Db.TopUpRequests.Where(t => t.Status == TopUpStatus.Approved).SumAsync(t => (decimal?)t.Amount);
-        var totalWithdrawnTask  = Db.WithdrawalRequests.Where(w => w.Status == WithdrawalStatus.Completed).SumAsync(w => (decimal?)w.NetAmount);
-
-        await Task.WhenAll(
-            usersTask, newTodayTask, walletSumsTask,
-            depositCountTask, depositAmtTask, withdrawCountTask, withdrawAmtTask, disputeCountTask,
-            openEventsTask, activeEventsTask,
-            recentDepositsTask, recentWithdrawalsTask, recentDisputesTask, liveEventsTask,
-            rankGroupTask, statusGroupTask,
-            totalDepositedTask, totalWithdrawnTask
-        );
-
-        _totalUsers     = await usersTask;
-        _newUsersToday  = await newTodayTask;
-
-        var ws = await walletSumsTask;
-        _floatAvailable  = ws?.Available ?? 0;
-        _floatLocked     = ws?.Locked ?? 0;
-        _floatPending    = ws?.Pending ?? 0;
-        _platformFloat   = _floatAvailable + _floatLocked + _floatPending;
-
-        _pendingDeposits       = await depositCountTask;
-        _pendingDepositAmount  = (await depositAmtTask) ?? 0;
-        _pendingWithdrawals    = await withdrawCountTask;
-        _pendingWithdrawalAmount = (await withdrawAmtTask) ?? 0;
-        _openDisputes          = await disputeCountTask;
-
-        _openEvents   = await openEventsTask;
-        _activeEvents = await activeEventsTask;
+        _openEvents   = await Db.Events.CountAsync(e => e.Status == EventStatus.Open);
+        _activeEvents = await Db.Events.CountAsync(e => e.Status == EventStatus.Active);
         _liveEvents   = _openEvents + _activeEvents;
 
-        _recentDeposits    = await recentDepositsTask;
-        _recentWithdrawals = await recentWithdrawalsTask;
-        _recentDisputes    = await recentDisputesTask;
-        _liveEventList     = await liveEventsTask;
+        _recentDeposits = await Db.TopUpRequests.Include(t => t.User)
+            .Where(t => t.Status == TopUpStatus.Pending)
+            .OrderByDescending(t => t.CreatedAt).Take(5).ToListAsync();
 
-        var rankGroups = await rankGroupTask;
+        _recentWithdrawals = await Db.WithdrawalRequests.Include(w => w.User)
+            .Where(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing)
+            .OrderByDescending(w => w.CreatedAt).Take(5).ToListAsync();
+
+        _recentDisputes = await Db.Disputes.Include(d => d.Event).Include(d => d.OpenedByUser)
+            .Where(d => d.Status != DisputeStatus.Resolved)
+            .OrderByDescending(d => d.CreatedAt).Take(5).ToListAsync();
+
+        _liveEventList = await Db.Events.Include(e => e.BetEntries)
+            .Where(e => e.Status == EventStatus.Open || e.Status == EventStatus.Active)
+            .OrderByDescending(e => e.CreatedAt).Take(6).ToListAsync();
+
+        var rankGroups = await Db.KazeUsers.GroupBy(u => u.RankTier)
+            .Select(g => new { Tier = g.Key, Count = g.Count() }).ToListAsync();
         _usersByRank = Enum.GetValues<RankTier>()
             .Select(t => (t, rankGroups.FirstOrDefault(g => g.Tier == t)?.Count ?? 0))
             .OrderByDescending(x => (int)x.t)
             .ToList();
 
-        var statusGroups = await statusGroupTask;
+        var statusGroups = await Db.Events.GroupBy(e => e.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
         _eventsByStatus = statusGroups
             .Select(g => (g.Status, g.Count))
             .OrderBy(x => x.Status)
             .ToList();
 
-        _totalDeposited = (await totalDepositedTask) ?? 0;
-        _totalWithdrawn = (await totalWithdrawnTask) ?? 0;
+        _totalDeposited = (await Db.TopUpRequests.Where(t => t.Status == TopUpStatus.Approved).SumAsync(t => (decimal?)t.Amount)) ?? 0;
+        _totalWithdrawn = (await Db.WithdrawalRequests.Where(w => w.Status == WithdrawalStatus.Completed).SumAsync(w => (decimal?)w.NetAmount)) ?? 0;
 
         _loading = false;
     }
