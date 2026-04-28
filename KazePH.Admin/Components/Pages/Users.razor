@@ -1,7 +1,514 @@
 @page "/admin/users"
 @rendermode InteractiveServer
+@inject KazeDbContext Db
+@inject UserManager<ApplicationUser> UserManager
+@using Microsoft.AspNetCore.Identity
+@using KazePH.Infrastructure.Identity
 
 <PageTitle>Users – KazePH Admin</PageTitle>
 
-<h1>Users</h1>
-<p>Coming soon.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-people-fill me-2 text-primary"></i>User Management</h4>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+</div>
+
+<!-- Search + Filters -->
+<div class="d-flex flex-wrap gap-2 mb-4">
+    <input type="text" class="form-control" style="max-width:280px"
+           placeholder="Search username or name…"
+           @bind="Search" @bind:event="oninput" />
+    <select class="form-select" style="max-width:160px" @bind="RankFilter">
+        <option value="">All Ranks</option>
+        @foreach (var r in Enum.GetValues<RankTier>())
+        {
+            <option value="@r">@r</option>
+        }
+    </select>
+    <select class="form-select" style="max-width:190px" @bind="StrikeFilter">
+        <option value="all">All Users</option>
+        <option value="clean">Clean (0 strikes)</option>
+        <option value="flagged">Flagged (1+ strikes)</option>
+        <option value="banned">Banned (3+ strikes)</option>
+    </select>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else if (_filtered.Count == 0)
+{
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-people fs-2 d-block mb-2"></i>No users match your filters.
+    </div>
+}
+else
+{
+    <div class="text-muted small mb-2">Showing @_filtered.Count of @_allUsers.Count users</div>
+
+    <!-- Desktop Table -->
+    <div class="table-responsive d-none d-md-block">
+        <table class="table table-hover table-bordered align-middle bg-white">
+            <thead class="table-light">
+                <tr>
+                    <th>User</th>
+                    <th>Phone</th>
+                    <th>Rank</th>
+                    <th>Strikes</th>
+                    <th>Balance</th>
+                    <th>Joined</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in _filtered)
+                {
+                    var wallet = _wallets.GetValueOrDefault(u.Id);
+                    var appUser = _appUsers.GetValueOrDefault(u.Id);
+                    var locked = IsLocked(appUser);
+                    <tr style="cursor:pointer" @onclick="() => OpenDetail(u)">
+                        <td>
+                            <div class="fw-semibold">@u.Username</div>
+                            <div class="text-muted small">@u.FullName</div>
+                            <div class="text-muted" style="font-size:0.72rem">@(appUser?.Email ?? "—")</div>
+                        </td>
+                        <td>
+                            <div class="small">@u.PhoneNumber</div>
+                            @if (u.PhoneVerified)
+                            {
+                                <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:0.7rem">
+                                    <i class="bi bi-check-circle me-1"></i>Verified
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size:0.7rem">Unverified</span>
+                            }
+                        </td>
+                        <td><span class="badge @RankBadge(u.RankTier)">@u.RankTier</span></td>
+                        <td>
+                            <span class="badge @StrikeBadge(u.Strikes)">
+                                @u.Strikes @(u.Strikes == 1 ? "strike" : "strikes")
+                            </span>
+                        </td>
+                        <td>
+                            @if (wallet is not null)
+                            {
+                                <div class="fw-semibold text-success small">₱@wallet.AvailableBalance.ToString("N2")</div>
+                                @if (wallet.LockedBalance > 0)
+                                {
+                                    <div class="text-warning small">+₱@wallet.LockedBalance.ToString("N2") locked</div>
+                                }
+                            }
+                            else { <span class="text-muted small">—</span> }
+                        </td>
+                        <td class="text-muted small">@u.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</td>
+                        <td>
+                            @if (locked)
+                            {
+                                <span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>Locked</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-success">Active</span>
+                            }
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" @onclick:stopPropagation="true" @onclick="() => OpenDetail(u)">
+                                <i class="bi bi-person-lines-fill"></i>
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Mobile Card List -->
+    <div class="d-flex d-md-none flex-column gap-3">
+        @foreach (var u in _filtered)
+        {
+            var wallet = _wallets.GetValueOrDefault(u.Id);
+            var appUser = _appUsers.GetValueOrDefault(u.Id);
+            var locked = IsLocked(appUser);
+            <div class="card p-3" style="cursor:pointer" @onclick="() => OpenDetail(u)">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="fw-semibold">@u.Username</div>
+                        <div class="text-muted small">@u.FullName</div>
+                    </div>
+                    <div class="d-flex gap-1 flex-wrap justify-content-end">
+                        <span class="badge @RankBadge(u.RankTier)">@u.RankTier</span>
+                        @if (locked) { <span class="badge bg-danger">Locked</span> }
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center small">
+                    <span class="text-muted">@u.PhoneNumber</span>
+                    @if (wallet is not null)
+                    {
+                        <span class="fw-semibold text-success">₱@wallet.AvailableBalance.ToString("N2")</span>
+                    }
+                </div>
+                @if (u.Strikes > 0)
+                {
+                    <div class="mt-1"><span class="badge @StrikeBadge(u.Strikes)">@u.Strikes strike(s)</span></div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- ── User Detail Modal ─────────────────────────────────────────────────────── -->
+@if (_active is not null)
+{
+    var wallet = _wallets.GetValueOrDefault(_active.Id);
+    var appUser = _appUsers.GetValueOrDefault(_active.Id);
+    var locked = IsLocked(appUser);
+    var initial = _active.Username.Length > 0 ? _active.Username[..1].ToUpper() : "?";
+
+    <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
+    <div class="modal d-block" tabindex="-1" style="z-index:1050;overflow-y:auto">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content shadow-lg">
+
+                <!-- Header -->
+                <div class="modal-header bg-light border-bottom">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center fw-bold fs-4"
+                             style="width:48px;height:48px;flex-shrink:0">
+                            @initial
+                        </div>
+                        <div>
+                            <h5 class="modal-title mb-0">@_active.Username</h5>
+                            <div class="text-muted small">@_active.FullName</div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close ms-auto" @onclick="CloseDetail"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <!-- Profile + Rank cards -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.7rem;letter-spacing:.07em">Profile</h6>
+                                    <dl class="row small mb-0">
+                                        <dt class="col-5 text-muted fw-normal">Email</dt>
+                                        <dd class="col-7 text-break">@(appUser?.Email ?? "—")</dd>
+                                        <dt class="col-5 text-muted fw-normal">Phone</dt>
+                                        <dd class="col-7">
+                                            @_active.PhoneNumber
+                                            @if (_active.PhoneVerified)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success ms-1"></i>
+                                            }
+                                        </dd>
+                                        <dt class="col-5 text-muted fw-normal">Joined</dt>
+                                        <dd class="col-7">@_active.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</dd>
+                                        <dt class="col-5 text-muted fw-normal">Account</dt>
+                                        <dd class="col-7">
+                                            @if (locked)
+                                            {
+                                                <span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>Locked</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-success">Active</span>
+                                            }
+                                        </dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.7rem;letter-spacing:.07em">Rank & Conduct</h6>
+                                    <div class="mb-3">
+                                        <div class="text-muted small mb-1">Rank Tier</div>
+                                        <span class="badge fs-6 @RankBadge(_active.RankTier)">@_active.RankTier</span>
+                                    </div>
+                                    <div>
+                                        <div class="text-muted small mb-2">Conduct Strikes</div>
+                                        <div class="d-flex align-items-center gap-2">
+                                            @for (int i = 1; i <= 3; i++)
+                                            {
+                                                var dot = i;
+                                                <i class="bi @(_active.Strikes >= dot ? "bi-circle-fill" : "bi-circle") fs-5 @(dot <= _active.Strikes ? (dot == 3 ? "text-danger" : "text-warning") : "text-secondary opacity-25")"></i>
+                                            }
+                                            <span class="small text-muted">@_active.Strikes / 3</span>
+                                        </div>
+                                        @if (_active.Strikes >= 3)
+                                        {
+                                            <div class="alert alert-danger py-1 px-2 small mt-2 mb-0">
+                                                <i class="bi bi-slash-circle me-1"></i>User is banned from the platform
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Wallet -->
+                    <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:0.7rem;letter-spacing:.07em">Wallet</h6>
+                    @if (wallet is not null)
+                    {
+                        <div class="row g-3 mb-4">
+                            <div class="col-4">
+                                <div class="card text-center shadow-sm" style="border-top:3px solid #28a745">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="text-muted small">Available</div>
+                                        <div class="fw-bold text-success">₱@wallet.AvailableBalance.ToString("N2")</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="card text-center shadow-sm" style="border-top:3px solid #ffc107">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="text-muted small">Locked</div>
+                                        <div class="fw-bold text-warning">₱@wallet.LockedBalance.ToString("N2")</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="card text-center shadow-sm" style="border-top:3px solid #6c757d">
+                                    <div class="card-body py-2 px-1">
+                                        <div class="text-muted small">Pending Out</div>
+                                        <div class="fw-bold text-secondary">₱@wallet.PendingWithdrawalBalance.ToString("N2")</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted small mb-4">No wallet record found.</p>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_actionSuccess))
+                    {
+                        <div class="alert alert-success py-2 small"><i class="bi bi-check-circle-fill me-1"></i>@_actionSuccess</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_actionError))
+                    {
+                        <div class="alert alert-danger py-2 small">@_actionError</div>
+                    }
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="modal-footer flex-wrap gap-2">
+                    @if (_active.Strikes < 3)
+                    {
+                        <button class="btn btn-warning btn-sm" @onclick="IssueStrike" disabled="@_acting">
+                            @if (_acting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            <i class="bi bi-exclamation-circle me-1"></i>Issue Strike
+                        </button>
+                    }
+                    @if (_active.Strikes > 0)
+                    {
+                        <button class="btn btn-outline-success btn-sm" @onclick="ResetStrikes" disabled="@_acting">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Strikes
+                        </button>
+                    }
+                    @if (locked)
+                    {
+                        <button class="btn btn-outline-primary btn-sm" @onclick="UnlockAccount" disabled="@_acting">
+                            <i class="bi bi-unlock me-1"></i>Unlock Account
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-danger btn-sm" @onclick="LockAccount" disabled="@_acting">
+                            <i class="bi bi-lock me-1"></i>Lock Account
+                        </button>
+                    }
+                    <button class="btn btn-secondary btn-sm ms-auto" @onclick="CloseDetail">Close</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _acting;
+
+    private string _searchRaw = string.Empty;
+    private string Search
+    {
+        get => _searchRaw;
+        set { _searchRaw = value; ApplyFilters(); }
+    }
+
+    private string _rankFilterRaw = string.Empty;
+    private string RankFilter
+    {
+        get => _rankFilterRaw;
+        set { _rankFilterRaw = value; ApplyFilters(); }
+    }
+
+    private string _strikeFilterRaw = "all";
+    private string StrikeFilter
+    {
+        get => _strikeFilterRaw;
+        set { _strikeFilterRaw = value; ApplyFilters(); }
+    }
+
+    private List<User> _allUsers = new();
+    private List<User> _filtered = new();
+    private Dictionary<string, Wallet> _wallets = new();
+    private Dictionary<string, ApplicationUser> _appUsers = new();
+
+    private User? _active;
+    private string _actionSuccess = string.Empty;
+    private string _actionError = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _active = null;
+        _allUsers = await Db.KazeUsers.OrderBy(u => u.Username).ToListAsync();
+        _wallets = await Db.Wallets.ToDictionaryAsync(w => w.UserId);
+        _appUsers = await Db.Users.ToDictionaryAsync(u => u.Id);
+        ApplyFilters();
+        _loading = false;
+    }
+
+    private void ApplyFilters()
+    {
+        var q = _allUsers.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_searchRaw))
+            q = q.Where(u => u.Username.Contains(_searchRaw, StringComparison.OrdinalIgnoreCase)
+                          || u.FullName.Contains(_searchRaw, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(_rankFilterRaw) && Enum.TryParse<RankTier>(_rankFilterRaw, out var rank))
+            q = q.Where(u => u.RankTier == rank);
+
+        q = _strikeFilterRaw switch
+        {
+            "clean"   => q.Where(u => u.Strikes == 0),
+            "flagged" => q.Where(u => u.Strikes >= 1),
+            "banned"  => q.Where(u => u.Strikes >= 3),
+            _         => q
+        };
+
+        _filtered = q.ToList();
+    }
+
+    private void OpenDetail(User u)
+    {
+        _active = u;
+        _actionSuccess = string.Empty;
+        _actionError = string.Empty;
+    }
+
+    private void CloseDetail() => _active = null;
+
+    private static bool IsLocked(ApplicationUser? u)
+        => u?.LockoutEnabled == true && u.LockoutEnd.HasValue && u.LockoutEnd > DateTimeOffset.UtcNow;
+
+    private async Task IssueStrike()
+    {
+        if (_active is null) return;
+        _acting = true; _actionSuccess = string.Empty; _actionError = string.Empty;
+        try
+        {
+            var user = await Db.KazeUsers.FindAsync(_active.Id);
+            if (user is null) return;
+            user.Strikes = Math.Min(user.Strikes + 1, 3);
+            await Db.SaveChangesAsync();
+            _active = user;
+            var idx = _allUsers.FindIndex(u => u.Id == user.Id);
+            if (idx >= 0) _allUsers[idx] = user;
+            ApplyFilters();
+            _actionSuccess = $"Strike issued. {user.Username} now has {user.Strikes} strike(s).";
+        }
+        catch (Exception ex) { _actionError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private async Task ResetStrikes()
+    {
+        if (_active is null) return;
+        _acting = true; _actionSuccess = string.Empty; _actionError = string.Empty;
+        try
+        {
+            var user = await Db.KazeUsers.FindAsync(_active.Id);
+            if (user is null) return;
+            user.Strikes = 0;
+            await Db.SaveChangesAsync();
+            _active = user;
+            var idx = _allUsers.FindIndex(u => u.Id == user.Id);
+            if (idx >= 0) _allUsers[idx] = user;
+            ApplyFilters();
+            _actionSuccess = $"Strikes cleared for {user.Username}.";
+        }
+        catch (Exception ex) { _actionError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private async Task LockAccount()
+    {
+        if (_active is null) return;
+        _acting = true; _actionSuccess = string.Empty; _actionError = string.Empty;
+        try
+        {
+            var appUser = await UserManager.FindByIdAsync(_active.Id);
+            if (appUser is null) { _actionError = "Identity user not found."; return; }
+            await UserManager.SetLockoutEnabledAsync(appUser, true);
+            await UserManager.SetLockoutEndDateAsync(appUser, DateTimeOffset.MaxValue);
+            var updated = await UserManager.FindByIdAsync(_active.Id);
+            if (updated is not null) _appUsers[_active.Id] = updated;
+            _actionSuccess = $"{_active.Username}'s account has been locked.";
+        }
+        catch (Exception ex) { _actionError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private async Task UnlockAccount()
+    {
+        if (_active is null) return;
+        _acting = true; _actionSuccess = string.Empty; _actionError = string.Empty;
+        try
+        {
+            var appUser = await UserManager.FindByIdAsync(_active.Id);
+            if (appUser is null) { _actionError = "Identity user not found."; return; }
+            await UserManager.SetLockoutEndDateAsync(appUser, null);
+            await UserManager.ResetAccessFailedCountAsync(appUser);
+            var updated = await UserManager.FindByIdAsync(_active.Id);
+            if (updated is not null) _appUsers[_active.Id] = updated;
+            _actionSuccess = $"{_active.Username}'s account has been unlocked.";
+        }
+        catch (Exception ex) { _actionError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private static string RankBadge(RankTier r) => r switch
+    {
+        RankTier.Rookie    => "bg-secondary",
+        RankTier.Contender => "bg-info text-dark",
+        RankTier.Veteran   => "bg-primary",
+        RankTier.Elite     => "bg-warning text-dark",
+        RankTier.Legend    => "bg-danger",
+        _                  => "bg-secondary"
+    };
+
+    private static string StrikeBadge(int strikes) => strikes switch
+    {
+        0 => "bg-success",
+        1 or 2 => "bg-warning text-dark",
+        _ => "bg-danger"
+    };
+}
