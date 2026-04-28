@@ -96,10 +96,10 @@ else
     <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
     <div class="modal d-block" tabindex="-1" style="z-index:1050">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark border-secondary">
-                <div class="modal-header border-secondary">
+            <div class="modal-content shadow">
+                <div class="modal-header">
                     <h5 class="modal-title">@(_isNew ? "Add Payment Account" : "Edit Payment Account")</h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -144,7 +144,7 @@ else
                         <div class="alert alert-danger py-2 small mt-3">@_modalError</div>
                     }
                 </div>
-                <div class="modal-footer border-secondary">
+                <div class="modal-footer">
                     <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
                     <button class="btn btn-primary" @onclick="ConfirmEdit">
                         @(_isNew ? "Add" : "Update")

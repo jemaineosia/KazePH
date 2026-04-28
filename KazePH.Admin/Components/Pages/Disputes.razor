@@ -54,7 +54,7 @@ else
 {
     <!-- Desktop table -->
     <div class="table-responsive d-none d-md-block">
-        <table class="table table-dark table-hover align-middle">
+        <table class="table table-hover table-bordered align-middle bg-white">
             <thead>
                 <tr>
                     <th>Case</th>
@@ -139,10 +139,10 @@ else
     <div class="modal-backdrop fade show" style="opacity:.7;z-index:1040"></div>
     <div class="modal d-block" tabindex="-1" style="z-index:1050;overflow-y:auto">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content border-0" style="background:#12122a">
+            <div class="modal-content border-0 shadow-lg">
 
                 <!-- Modal Header -->
-                <div class="modal-header border-0" style="background:#0f0f1e">
+                <div class="modal-header border-bottom bg-light">
                     <div>
                         <h5 class="modal-title mb-0 fw-bold">
                             <i class="bi bi-shield-exclamation text-danger me-2"></i>Dispute Case
@@ -154,35 +154,35 @@ else
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge @StatusBadge(_activeDispute.Status) fs-6">@StatusLabel(_activeDispute.Status)</span>
-                        <button type="button" class="btn-close btn-close-white" @onclick="CloseDetail"></button>
+                        <button type="button" class="btn-close" @onclick="CloseDetail"></button>
                     </div>
                 </div>
 
                 <div class="modal-body p-0">
 
                     <!-- ── Parties & Declaration Strip ──────────────────────── -->
-                    <div class="row g-0 border-bottom" style="border-color:#2a2a4a !important">
+                    <div class="row g-0 border-bottom">
 
                         <!-- Party A -->
-                        <div class="col-6 p-3" style="border-right:1px solid #2a2a4a;background:#1a1a2e">
+                        <div class="col-6 p-3 bg-light" style="border-right:1px solid #dee2e6">
                             <div class="d-flex align-items-center gap-2 mb-2">
-                                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold"
-                                     style="width:36px;height:36px;background:#1e3a5f;color:#6db3f2;font-size:0.85rem">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold bg-primary bg-opacity-10 text-primary"
+                                     style="width:36px;height:36px;font-size:0.85rem">
                                     @(partyA?[..1].ToUpper() ?? "A")
                                 </div>
                                 <div>
-                                    <div class="fw-semibold text-white">@(partyA ?? "Party A")</div>
-                                    <div class="small" style="color:#9090b0">Playing: <strong class="text-primary">@(ev?.SideA ?? "Side A")</strong></div>
+                                    <div class="fw-semibold">@(partyA ?? "Party A")</div>
+                                    <div class="small text-muted">Playing: <strong class="text-primary">@(ev?.SideA ?? "Side A")</strong></div>
                                 </div>
                             </div>
                             <div class="small">
-                                <span style="color:#9090b0">Staked:</span>
+                                <span class="text-muted">Staked:</span>
                                 <span class="text-success fw-bold ms-1">₱@stakeA.ToString("N2")</span>
                             </div>
                             @if (declarationA is not null)
                             {
                                 <div class="small mt-1">
-                                    <span style="color:#9090b0">Declared:</span>
+                                    <span class="text-muted">Declared:</span>
                                     <span class="badge ms-1 @(declarationA.DeclaredWinningSide == "A" ? "bg-primary" : declarationA.DeclaredWinningSide == "Draw" ? "bg-secondary" : "bg-danger")">
                                         @(declarationA.DeclaredWinningSide == "A" ? ev?.SideA : declarationA.DeclaredWinningSide == "Draw" ? "Draw" : ev?.SideB) wins
                                     </span>
@@ -191,25 +191,25 @@ else
                         </div>
 
                         <!-- Party B -->
-                        <div class="col-6 p-3" style="background:#1a1a2e">
+                        <div class="col-6 p-3 bg-light">
                             <div class="d-flex align-items-center gap-2 mb-2">
-                                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold"
-                                     style="width:36px;height:36px;background:#3d1f00;color:#f0a040;font-size:0.85rem">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold bg-warning bg-opacity-25 text-dark"
+                                     style="width:36px;height:36px;font-size:0.85rem">
                                     @(partyB?[..1].ToUpper() ?? "B")
                                 </div>
                                 <div>
-                                    <div class="fw-semibold text-white">@(partyB ?? "Party B")</div>
-                                    <div class="small" style="color:#9090b0">Playing: <strong class="text-warning">@(ev?.SideB ?? "Side B")</strong></div>
+                                    <div class="fw-semibold">@(partyB ?? "Party B")</div>
+                                    <div class="small text-muted">Playing: <strong class="text-warning">@(ev?.SideB ?? "Side B")</strong></div>
                                 </div>
                             </div>
                             <div class="small">
-                                <span style="color:#9090b0">Staked:</span>
+                                <span class="text-muted">Staked:</span>
                                 <span class="text-success fw-bold ms-1">₱@stakeB.ToString("N2")</span>
                             </div>
                             @if (declarationB is not null)
                             {
                                 <div class="small mt-1">
-                                    <span style="color:#9090b0">Declared:</span>
+                                    <span class="text-muted">Declared:</span>
                                     <span class="badge ms-1 @(declarationB.DeclaredWinningSide == "B" ? "bg-warning text-dark" : declarationB.DeclaredWinningSide == "Draw" ? "bg-secondary" : "bg-danger")">
                                         @(declarationB.DeclaredWinningSide == "B" ? ev?.SideB : declarationB.DeclaredWinningSide == "Draw" ? "Draw" : ev?.SideA) wins
                                     </span>
@@ -219,7 +219,7 @@ else
                     </div>
 
                     <!-- ── Evidence Thread ─────────────────────────────────── -->
-                    <div class="p-3" style="min-height:300px;max-height:420px;overflow-y:auto;background:#0f0f1e">
+                    <div class="p-3 bg-light" style="min-height:300px;max-height:420px;overflow-y:auto">
                         @if (!_activeDispute.Evidence.Any())
                         {
                             <div class="text-center text-muted py-4">
@@ -238,13 +238,13 @@ else
                                 if (isAdmin)
                                 {
                                     <div class="d-flex justify-content-center my-3">
-                                        <div class="rounded-3 px-3 py-2 text-center" style="max-width:70%;background:#1e1e38;border:1px solid #e94560">
+                                        <div class="rounded-3 px-3 py-2 text-center bg-danger bg-opacity-10 border border-danger-subtle" style="max-width:70%">
                                             <div class="small text-danger fw-bold mb-1">
                                                 <i class="bi bi-shield-fill me-1"></i>KazePH Admin
                                             </div>
                                             @if (!string.IsNullOrWhiteSpace(entry.Description))
                                             {
-                                                <div class="small text-light">@entry.Description</div>
+                                                <div class="small">@entry.Description</div>
                                             }
                                             @if (!string.IsNullOrWhiteSpace(entry.EvidenceUrl))
                                             {
@@ -261,16 +261,16 @@ else
                                 else if (isPartyA)
                                 {
                                     <div class="d-flex align-items-start gap-2 mb-3">
-                                        <div class="rounded-circle flex-shrink-0 d-flex align-items-center justify-content-center fw-bold"
-                                             style="width:32px;height:32px;background:#1e3a5f;color:#6db3f2;font-size:0.75rem">
+                                        <div class="rounded-circle flex-shrink-0 d-flex align-items-center justify-content-center fw-bold bg-primary bg-opacity-10 text-primary"
+                                             style="width:32px;height:32px;font-size:0.75rem">
                                             @(partyA?[..1].ToUpper() ?? "A")
                                         </div>
                                         <div style="max-width:65%">
                                             <div class="small text-primary fw-semibold mb-1">@partyA</div>
-                                            <div class="rounded-3 p-2" style="background:#1a2a3a">
+                                            <div class="rounded-3 p-2 bg-primary bg-opacity-10">
                                                 @if (!string.IsNullOrWhiteSpace(entry.Description))
                                                 {
-                                                    <div class="small text-light">@entry.Description</div>
+                                                    <div class="small">@entry.Description</div>
                                                 }
                                                 @if (!string.IsNullOrWhiteSpace(entry.EvidenceUrl))
                                                 {
@@ -292,10 +292,10 @@ else
                                     <div class="d-flex align-items-start justify-content-end gap-2 mb-3">
                                         <div style="max-width:65%;text-align:right">
                                             <div class="small text-warning fw-semibold mb-1">@partyB</div>
-                                            <div class="rounded-3 p-2" style="background:#2a1a00">
+                                            <div class="rounded-3 p-2 bg-warning bg-opacity-10">
                                                 @if (!string.IsNullOrWhiteSpace(entry.Description))
                                                 {
-                                                    <div class="small text-light text-start">@entry.Description</div>
+                                                    <div class="small text-start">@entry.Description</div>
                                                 }
                                                 @if (!string.IsNullOrWhiteSpace(entry.EvidenceUrl))
                                                 {
@@ -310,8 +310,8 @@ else
                                                 @entry.SubmittedAt.ToLocalTime().ToString("MMM d, h:mm tt")
                                             </div>
                                         </div>
-                                        <div class="rounded-circle flex-shrink-0 d-flex align-items-center justify-content-center fw-bold"
-                                             style="width:32px;height:32px;background:#3d1f00;color:#f0a040;font-size:0.75rem">
+                                        <div class="rounded-circle flex-shrink-0 d-flex align-items-center justify-content-center fw-bold bg-warning bg-opacity-25 text-dark"
+                                             style="width:32px;height:32px;font-size:0.75rem">
                                             @(partyB?[..1].ToUpper() ?? "B")
                                         </div>
                                     </div>
@@ -323,15 +323,15 @@ else
                     <!-- ── Admin Compose Box ───────────────────────────────── -->
                     @if (_activeDispute.Status != DisputeStatus.Resolved)
                     {
-                        <div class="p-3 border-top border-bottom" style="border-color:#2a2a4a !important;background:#12122a">
-                            <div class="small fw-semibold mb-2" style="color:#c0c0d8">
+                        <div class="p-3 border-top border-bottom bg-white">
+                            <div class="small fw-semibold mb-2 text-muted">
                                 <i class="bi bi-shield-fill text-danger me-1"></i>Post as KazePH Admin
                             </div>
-                            <textarea class="form-control form-control-sm mb-2 bg-dark text-light border-secondary" rows="2"
+                            <textarea class="form-control form-control-sm mb-2" rows="2"
                                       placeholder="Type a message to both parties…"
                                       @bind="_adminMessage"></textarea>
                             <div class="d-flex gap-2 align-items-center">
-                                <input type="url" class="form-control form-control-sm flex-grow-1 bg-dark text-light border-secondary"
+                                <input type="url" class="form-control form-control-sm flex-grow-1"
                                        placeholder="Optional attachment URL"
                                        @bind="_adminAttachmentUrl" />
                                 <button class="btn btn-sm btn-outline-danger flex-shrink-0"
@@ -351,13 +351,13 @@ else
                     <!-- ── Verdict / Resolve ───────────────────────────────── -->
                     @if (_activeDispute.Status != DisputeStatus.Resolved)
                     {
-                        <div class="p-3" style="background:#12122a">
-                            <div class="fw-semibold text-white mb-3">
+                        <div class="p-3 border-top">
+                            <div class="fw-semibold mb-3">
                                 <i class="bi bi-gavel text-danger me-2"></i>Admin Ruling
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label small" style="color:#c0c0d8">Winner</label>
+                                <label class="form-label small text-muted">Winner</label>
                                 <div class="d-flex gap-2 flex-wrap">
                                     <button class="btn btn-sm @(_verdictSide == "A" ? "btn-primary" : "btn-outline-primary")"
                                             @onclick='() => _verdictSide = "A"'>
@@ -375,8 +375,8 @@ else
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label small" style="color:#c0c0d8">Verdict Note <span class="text-danger">*</span></label>
-                                <textarea class="form-control bg-dark text-light border-secondary" rows="3"
+                                <label class="form-label small text-muted">Verdict Note <span class="text-danger">*</span></label>
+                                <textarea class="form-control" rows="3"
                                           placeholder="Explain the ruling. Visible to both parties."
                                           @bind="_verdictNote"></textarea>
                             </div>
@@ -396,13 +396,13 @@ else
                     }
                     else
                     {
-                        <div class="p-3 border-top" style="border-color:#2a2a4a !important;background:#0f2a0f">
+                        <div class="p-3 border-top bg-success bg-opacity-10">
                             <div class="fw-semibold text-success mb-1">
                                 <i class="bi bi-check-circle me-2"></i>Resolved @_activeDispute.ResolvedAt?.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
                             </div>
                             @if (!string.IsNullOrWhiteSpace(_activeDispute.AdminNote))
                             {
-                                <p class="small mb-0 text-light fst-italic">"@_activeDispute.AdminNote"</p>
+                                <p class="small mb-0 text-muted fst-italic">"@_activeDispute.AdminNote"</p>
                             }
                         </div>
                     }

@@ -6,10 +6,34 @@
 
 main {
     flex: 1;
+    background-color: #f8f9fa;
 }
 
 .sidebar {
-    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+    background-color: #fff;
+    border-right: 1px solid #dee2e6;
+}
+
+::deep .navbar-brand {
+    color: #0d6efd !important;
+    font-weight: 700;
+}
+
+::deep .nav-link {
+    color: #344767;
+    border-radius: 0.375rem;
+    margin-bottom: 2px;
+}
+
+::deep .nav-link:hover {
+    color: #0d6efd;
+    background-color: rgba(13, 110, 253, 0.08);
+}
+
+::deep .nav-link.active {
+    color: #0d6efd !important;
+    background-color: rgba(13, 110, 253, 0.1);
+    font-weight: 600;
 }
 
 .top-row {

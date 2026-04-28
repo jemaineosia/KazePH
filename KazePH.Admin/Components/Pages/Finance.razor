@@ -35,7 +35,7 @@ else
     <!-- ── Row 1: Money In / Out ──────────────────────────────────────────────── -->
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
-            <div class="card h-100 border-0" style="background:#12122a;border-left:3px solid #28a745 !important">
+            <div class="card h-100 shadow-sm" style="border-left:4px solid #28a745 !important">
                 <div class="card-body">
                     <div class="text-muted small mb-1"><i class="bi bi-arrow-down-circle me-1 text-success"></i>Total Deposited</div>
                     <div class="fs-4 fw-bold text-success">₱@_totalDeposited.ToString("N2")</div>
@@ -44,7 +44,7 @@ else
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card h-100 border-0" style="background:#12122a;border-left:3px solid #dc3545 !important">
+            <div class="card h-100 shadow-sm" style="border-left:4px solid #dc3545 !important">
                 <div class="card-body">
                     <div class="text-muted small mb-1"><i class="bi bi-arrow-up-circle me-1 text-danger"></i>Total Paid Out</div>
                     <div class="fs-4 fw-bold text-danger">₱@_totalPaidOut.ToString("N2")</div>
@@ -53,7 +53,7 @@ else
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card h-100 border-0" style="background:#12122a;border-left:3px solid #ffc107 !important">
+            <div class="card h-100 shadow-sm" style="border-left:4px solid #ffc107 !important">
                 <div class="card-body">
                     <div class="text-muted small mb-1"><i class="bi bi-graph-up-arrow me-1 text-warning"></i>Platform Revenue</div>
                     <div class="fs-4 fw-bold text-warning">₱@_platformFees.ToString("N2")</div>
@@ -62,7 +62,7 @@ else
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card h-100 border-0" style="background:#12122a;border-left:3px solid #0dcaf0 !important">
+            <div class="card h-100 shadow-sm" style="border-left:4px solid #0dcaf0 !important">
                 <div class="card-body">
                     <div class="text-muted small mb-1"><i class="bi bi-heart-fill me-1 text-info"></i>Total Agent Tips</div>
                     <div class="fs-4 fw-bold text-info">₱@_totalTips.ToString("N2")</div>
@@ -78,7 +78,7 @@ else
     </h6>
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
-            <div class="card border-0" style="background:#0f0f1e">
+            <div class="card shadow-sm">
                 <div class="card-body py-3">
                     <div class="text-muted small mb-1">Available in Wallets</div>
                     <div class="fs-5 fw-bold text-success">₱@_floatAvailable.ToString("N2")</div>
@@ -86,7 +86,7 @@ else
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0" style="background:#0f0f1e">
+            <div class="card shadow-sm">
                 <div class="card-body py-3">
                     <div class="text-muted small mb-1">Locked in Bets</div>
                     <div class="fs-5 fw-bold text-warning">₱@_floatLocked.ToString("N2")</div>
@@ -94,7 +94,7 @@ else
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0" style="background:#0f0f1e">
+            <div class="card shadow-sm">
                 <div class="card-body py-3">
                     <div class="text-muted small mb-1">Pending Withdrawal</div>
                     <div class="fs-5 fw-bold text-secondary">₱@_floatPendingWithdrawal.ToString("N2")</div>
@@ -102,7 +102,7 @@ else
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card border-0" style="background:#0f0f1e">
+            <div class="card shadow-sm">
                 <div class="card-body py-3">
                     <div class="text-muted small mb-1">Total User Float</div>
                     <div class="fs-5 fw-bold">₱@(_floatAvailable + _floatLocked + _floatPendingWithdrawal).ToString("N2")</div>
@@ -141,7 +141,7 @@ else
     <!-- ── Cash Flow by Payment Method ───────────────────────────────────────── -->
     <h6 class="fw-semibold mb-3">Cash Flow by Payment Method</h6>
     <div class="table-responsive mb-4">
-        <table class="table table-dark align-middle mb-0">
+        <table class="table table-bordered table-hover align-middle bg-white mb-0">
             <thead>
                 <tr class="text-muted small">
                     <th>Method</th>
@@ -174,7 +174,7 @@ else
                 }
                 @if (_byMethod.Any())
                 {
-                    <tr class="fw-bold border-top border-secondary" style="background:#0f0f1e">
+                    <tr class="fw-bold border-top table-light">
                         <td>Total</td>
                         <td class="text-success">₱@_byMethod.Sum(r => r.Deposited).ToString("N2")</td>
                         <td class="text-danger">₱@_byMethod.Sum(r => r.PaidOut).ToString("N2")</td>
@@ -195,7 +195,7 @@ else
     {
         <h6 class="fw-semibold mb-3"><i class="bi bi-heart-fill text-danger me-1"></i>Agent Tips Breakdown</h6>
         <div class="table-responsive mb-4">
-            <table class="table table-dark align-middle mb-0">
+            <table class="table table-bordered table-hover align-middle bg-white mb-0">
                 <thead>
                     <tr class="text-muted small">
                         <th>Agent</th>
@@ -228,7 +228,7 @@ else
     else
     {
         <div class="table-responsive">
-            <table class="table table-dark table-sm align-middle mb-0">
+            <table class="table table-bordered table-sm table-hover align-middle bg-white mb-0">
                 <thead>
                     <tr class="text-muted small">
                         <th>Date</th>

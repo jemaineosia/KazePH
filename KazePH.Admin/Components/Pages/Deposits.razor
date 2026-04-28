@@ -45,7 +45,7 @@ else
 {
     <!-- Desktop table -->
     <div class="table-responsive d-none d-md-block">
-        <table class="table table-dark table-hover align-middle">
+        <table class="table table-hover table-bordered align-middle bg-white">
             <thead>
                 <tr>
                     <th>User</th>
@@ -147,10 +147,10 @@ else
     <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
     <div class="modal d-block" tabindex="-1" style="z-index:1050">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark border-secondary">
-                <div class="modal-header border-secondary">
+            <div class="modal-content shadow">
+                <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-check-circle text-success me-2"></i>Approve Cash-In</h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
                 </div>
                 <div class="modal-body">
                     <p>Credit <strong class="text-success">₱@_approveTarget.Amount.ToString("N2")</strong> to <strong>@(_approveTarget.User?.Username ?? _approveTarget.UserId[..8])</strong>'s wallet?</p>
@@ -163,7 +163,7 @@ else
                         <div class="alert alert-danger py-2 small mt-2">@_actionError</div>
                     }
                 </div>
-                <div class="modal-footer border-secondary">
+                <div class="modal-footer">
                     <button class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
                     <button class="btn btn-success" @onclick="ConfirmApprove" disabled="@_acting">
                         @if (_acting) { <span class="spinner-border spinner-border-sm me-1" role="status"></span> }
@@ -181,10 +181,10 @@ else
     <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
     <div class="modal d-block" tabindex="-1" style="z-index:1050">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark border-secondary">
-                <div class="modal-header border-secondary">
+            <div class="modal-content shadow">
+                <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-x-circle text-danger me-2"></i>Reject Cash-In</h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="CloseModals"></button>
+                    <button type="button" class="btn-close" @onclick="CloseModals"></button>
                 </div>
                 <div class="modal-body">
                     <p>Reject <strong class="text-danger">₱@_rejectTarget.Amount.ToString("N2")</strong> from <strong>@(_rejectTarget.User?.Username ?? _rejectTarget.UserId[..8])</strong>?</p>
@@ -197,7 +197,7 @@ else
                         <div class="alert alert-danger py-2 small mt-2">@_actionError</div>
                     }
                 </div>
-                <div class="modal-footer border-secondary">
+                <div class="modal-footer">
                     <button class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
                     <button class="btn btn-danger" @onclick="ConfirmReject" disabled="@_acting">
                         @if (_acting) { <span class="spinner-border spinner-border-sm me-1" role="status"></span> }
