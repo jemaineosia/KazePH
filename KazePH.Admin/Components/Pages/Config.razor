@@ -1,7 +1,345 @@
 @page "/admin/config"
 @rendermode InteractiveServer
+@inject KazeDbContext Db
+@inject IPlatformConfigService ConfigService
 
 <PageTitle>Config – KazePH Admin</PageTitle>
 
-<h1>Platform Configuration</h1>
-<p>Coming soon.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-gear-fill me-2 text-primary"></i>Platform Configuration</h4>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadAsync()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+        <button class="btn btn-sm btn-primary" @onclick="() => OpenAddModal()">
+            <i class="bi bi-plus-circle me-1"></i>Add Config
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_saveSuccess))
+{
+    <div class="alert alert-success py-2 small alert-dismissible">
+        <i class="bi bi-check-circle-fill me-1"></i>@_saveSuccess
+        <button type="button" class="btn-close btn-close-sm" @onclick="() => _saveSuccess = string.Empty"></button>
+    </div>
+}
+@if (!string.IsNullOrEmpty(_saveError))
+{
+    <div class="alert alert-danger py-2 small">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>@_saveError
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else
+{
+    <!-- Existing config entries -->
+    @if (_configs.Count == 0)
+    {
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-sliders fs-2 d-block mb-2"></i>
+            No configuration entries yet. Add one above or use a quick-add below.
+        </div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-3 mb-4">
+            @foreach (var cfg in _configs)
+            {
+                var known = KnownKeys.GetValueOrDefault(cfg.Key);
+                var label = known.Label ?? cfg.Key;
+                var isEditing = _editingId == cfg.Id;
+
+                <div class="card shadow-sm @(isEditing ? "border-primary" : "")">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-3">
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="fw-semibold">@label</div>
+                                @if (known.Label is not null && known.Label != cfg.Key)
+                                {
+                                    <div class="text-muted small font-monospace">@cfg.Key</div>
+                                }
+                                @if (!string.IsNullOrEmpty(cfg.Description))
+                                {
+                                    <div class="text-muted small mt-1">@cfg.Description</div>
+                                }
+
+                                @if (isEditing)
+                                {
+                                    <div class="d-flex gap-2 align-items-center mt-3">
+                                        <input type="text" class="form-control form-control-sm" style="max-width:320px"
+                                               @bind="_editValue" @bind:event="oninput"
+                                               @onkeydown="OnEditKeyDown" />
+                                        <button class="btn btn-sm btn-primary" @onclick="SaveEdit" disabled="@_saving">
+                                            @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                            Save
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit" disabled="@_saving">Cancel</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+                                        <span class="badge bg-light text-dark border font-monospace fs-6 px-3 py-2">@cfg.Value</span>
+                                        @if (known.Unit is not null)
+                                        {
+                                            <span class="text-muted small">@known.Unit</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            @if (!isEditing)
+                            {
+                                <div class="d-flex gap-1 flex-shrink-0">
+                                    <button class="btn btn-sm btn-outline-secondary" title="Edit" @onclick="() => StartEdit(cfg)">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" title="Delete" @onclick="() => ConfirmDelete(cfg)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="text-muted mt-2" style="font-size:0.7rem">
+                            Last updated @cfg.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Quick-add for known keys not yet configured -->
+    @if (MissingKeys.Any())
+    {
+        <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:0.7rem;letter-spacing:.07em">
+            <i class="bi bi-lightning-charge me-1"></i>Quick Add
+        </h6>
+        <div class="d-flex flex-wrap gap-2 mb-4">
+            @foreach (var k in MissingKeys)
+            {
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => OpenAddModal(k.Key)">
+                    <i class="bi bi-plus me-1"></i>@k.Value.Label
+                </button>
+            }
+        </div>
+    }
+}
+
+<!-- Delete confirmation -->
+@if (_deleteTarget is not null)
+{
+    <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
+    <div class="modal d-block" tabindex="-1" style="z-index:1050">
+        <div class="modal-dialog modal-dialog-centered" style="max-width:420px">
+            <div class="modal-content shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-trash text-danger me-2"></i>Delete Config</h5>
+                    <button type="button" class="btn-close" @onclick="() => _deleteTarget = null"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1">Remove config key <strong class="font-monospace">@_deleteTarget.Key</strong>?</p>
+                    <p class="text-muted small mb-0">This cannot be undone. The platform will fall back to its hardcoded default for this setting.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary btn-sm" @onclick="() => _deleteTarget = null">Cancel</button>
+                    <button class="btn btn-danger btn-sm" @onclick="DeleteConfig" disabled="@_saving">
+                        @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Add / preset modal -->
+@if (_showAddModal)
+{
+    <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
+    <div class="modal d-block" tabindex="-1" style="z-index:1050">
+        <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+            <div class="modal-content shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2 text-primary"></i>Add Config Entry</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAddModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Key <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control font-monospace" @bind="_newKey"
+                               placeholder="e.g. WithdrawalFeePercent" />
+                        <div class="form-text">Must be unique. Use PascalCase by convention.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Value <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" @bind="_newValue" placeholder="e.g. 10" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Description <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" class="form-control" @bind="_newDescription"
+                               placeholder="e.g. Percentage fee deducted from each withdrawal" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(_modalError))
+                    {
+                        <div class="alert alert-danger py-2 small">@_modalError</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary btn-sm" @onclick="CloseAddModal">Cancel</button>
+                    <button class="btn btn-primary btn-sm" @onclick="AddConfig" disabled="@_saving">
+                        @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Add
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private record KnownKeyMeta(string Label, string? Description, string? Unit, string DefaultValue);
+
+    private static readonly Dictionary<string, KnownKeyMeta> KnownKeys = new()
+    {
+        ["WithdrawalFeePercent"] = new("Withdrawal Fee %",    "Percentage fee deducted from each withdrawal",              "%",   "10"),
+        ["MinWithdrawalAmount"]  = new("Min Withdrawal (₱)",  "Minimum amount a user can request to withdraw",             "PHP", "100"),
+        ["MinDepositAmount"]     = new("Min Deposit (₱)",     "Minimum amount a user can top up",                          "PHP", "50"),
+        ["MaxWithdrawalAmount"]  = new("Max Withdrawal (₱)",  "Maximum amount per single withdrawal request",              "PHP", "50000"),
+        ["MaintenanceMode"]      = new("Maintenance Mode",    "Set to 'true' to show a maintenance banner to all users",   null,  "false"),
+        ["PlatformNotice"]       = new("Platform Notice",     "Announcement shown to all users on the home screen",        null,  ""),
+    };
+
+    private List<KeyValuePair<string, KnownKeyMeta>> MissingKeys =>
+        KnownKeys.Where(k => _configs.All(c => c.Key != k.Key)).ToList();
+
+    private bool _loading = true;
+    private bool _saving;
+    private List<PlatformConfig> _configs = new();
+
+    // Inline edit state
+    private Guid? _editingId;
+    private string _editValue = string.Empty;
+
+    // Delete state
+    private PlatformConfig? _deleteTarget;
+
+    // Add modal state
+    private bool _showAddModal;
+    private string _newKey = string.Empty;
+    private string _newValue = string.Empty;
+    private string _newDescription = string.Empty;
+    private string _modalError = string.Empty;
+
+    // Feedback
+    private string _saveSuccess = string.Empty;
+    private string _saveError = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _configs = await Db.PlatformConfigs.OrderBy(c => c.Key).ToListAsync();
+        _loading = false;
+    }
+
+    private void StartEdit(PlatformConfig cfg)
+    {
+        _editingId = cfg.Id;
+        _editValue = cfg.Value;
+        _saveError = _saveSuccess = string.Empty;
+    }
+
+    private void CancelEdit() => _editingId = null;
+
+    private async Task SaveEdit()
+    {
+        var cfg = _configs.FirstOrDefault(c => c.Id == _editingId);
+        if (cfg is null) return;
+        _saving = true; _saveError = string.Empty;
+        try
+        {
+            await ConfigService.SetConfigAsync(cfg.Key, _editValue.Trim(), cfg.Description);
+            _saveSuccess = $"'{cfg.Key}' updated.";
+            _editingId = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) { _saveError = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private async Task OnEditKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")  await SaveEdit();
+        if (e.Key == "Escape") CancelEdit();
+    }
+
+    private void ConfirmDelete(PlatformConfig cfg)
+    {
+        _deleteTarget = cfg;
+        _saveError = _saveSuccess = string.Empty;
+    }
+
+    private async Task DeleteConfig()
+    {
+        if (_deleteTarget is null) return;
+        _saving = true;
+        try
+        {
+            var entity = await Db.PlatformConfigs.FindAsync(_deleteTarget.Id);
+            if (entity is not null)
+            {
+                Db.PlatformConfigs.Remove(entity);
+                await Db.SaveChangesAsync();
+            }
+            _saveSuccess = $"'{_deleteTarget.Key}' removed.";
+            _deleteTarget = null;
+            await LoadAsync();
+        }
+        catch (Exception ex) { _saveError = ex.Message; }
+        finally { _saving = false; }
+    }
+
+    private void OpenAddModal(string presetKey = "")
+    {
+        _newKey = presetKey;
+        _newValue = KnownKeys.TryGetValue(presetKey, out var meta) ? meta.DefaultValue : string.Empty;
+        _newDescription = KnownKeys.TryGetValue(presetKey, out var meta2) ? meta2.Description ?? string.Empty : string.Empty;
+        _modalError = string.Empty;
+        _showAddModal = true;
+    }
+
+    private void CloseAddModal()
+    {
+        _showAddModal = false;
+        _newKey = _newValue = _newDescription = _modalError = string.Empty;
+    }
+
+    private async Task AddConfig()
+    {
+        if (string.IsNullOrWhiteSpace(_newKey))   { _modalError = "Key is required.";   return; }
+        if (string.IsNullOrWhiteSpace(_newValue))  { _modalError = "Value is required."; return; }
+        if (_configs.Any(c => c.Key == _newKey.Trim())) { _modalError = "A config with this key already exists."; return; }
+
+        _saving = true; _modalError = string.Empty;
+        try
+        {
+            await ConfigService.SetConfigAsync(_newKey.Trim(), _newValue.Trim(),
+                string.IsNullOrWhiteSpace(_newDescription) ? null : _newDescription.Trim());
+            _saveSuccess = $"'{_newKey.Trim()}' added.";
+            CloseAddModal();
+            await LoadAsync();
+        }
+        catch (Exception ex) { _modalError = ex.Message; }
+        finally { _saving = false; }
+    }
+}
