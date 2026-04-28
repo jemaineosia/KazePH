@@ -1,7 +1,489 @@
 @page "/admin"
 @rendermode InteractiveServer
+@inject KazeDbContext Db
+
+@using KazePH.Core.Enums
+@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Dashboard – KazePH Admin</PageTitle>
 
-<h1>Dashboard</h1>
-<p>Coming soon.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard</h4>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync" disabled="@_loading">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else
+{
+    <!-- KPI Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card shadow-sm h-100 border-0" style="border-left:4px solid #0d6efd !important">
+                <div class="card-body py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-people-fill me-1"></i>Total Users</div>
+                    <div class="fs-4 fw-bold">@_totalUsers</div>
+                    <div class="text-muted" style="font-size:0.7rem">@_newUsersToday new today</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card shadow-sm h-100 border-0" style="border-left:4px solid #198754 !important">
+                <div class="card-body py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-calendar-event me-1"></i>Live Events</div>
+                    <div class="fs-4 fw-bold">@_liveEvents</div>
+                    <div class="text-muted" style="font-size:0.7rem">@_openEvents open · @_activeEvents active</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card shadow-sm h-100 border-0" style="border-left:4px solid #6f42c1 !important">
+                <div class="card-body py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-wallet2 me-1"></i>Platform Float</div>
+                    <div class="fs-4 fw-bold">₱@_platformFloat.ToString("N0")</div>
+                    <div class="text-muted" style="font-size:0.7rem">all wallet balances</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card shadow-sm h-100 border-0 @(_pendingDeposits > 0 ? "border-warning" : "")" style="border-left:4px solid #ffc107 !important">
+                <div class="card-body py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-cash-coin me-1"></i>Pending Deposits</div>
+                    <div class="fs-4 fw-bold d-flex align-items-center gap-2">
+                        @_pendingDeposits
+                        @if (_pendingDeposits > 0)
+                        {
+                            <span class="badge bg-warning text-dark" style="font-size:0.6rem">Action</span>
+                        }
+                    </div>
+                    <div class="text-muted" style="font-size:0.7rem">₱@_pendingDepositAmount.ToString("N0") total</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card shadow-sm h-100 border-0 @(_pendingWithdrawals > 0 ? "border-warning" : "")" style="border-left:4px solid #fd7e14 !important">
+                <div class="card-body py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-bank me-1"></i>Pending Withdrawals</div>
+                    <div class="fs-4 fw-bold d-flex align-items-center gap-2">
+                        @_pendingWithdrawals
+                        @if (_pendingWithdrawals > 0)
+                        {
+                            <span class="badge bg-warning text-dark" style="font-size:0.6rem">Action</span>
+                        }
+                    </div>
+                    <div class="text-muted" style="font-size:0.7rem">₱@_pendingWithdrawalAmount.ToString("N0") total</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card shadow-sm h-100 border-0 @(_openDisputes > 0 ? "border-danger" : "")" style="border-left:4px solid #dc3545 !important">
+                <div class="card-body py-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Open Disputes</div>
+                    <div class="fs-4 fw-bold d-flex align-items-center gap-2">
+                        @_openDisputes
+                        @if (_openDisputes > 0)
+                        {
+                            <span class="badge bg-danger" style="font-size:0.6rem">Urgent</span>
+                        }
+                    </div>
+                    <div class="text-muted" style="font-size:0.7rem">needs review</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Needs Attention -->
+    <div class="row g-3 mb-4">
+        <!-- Pending Deposits -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold small"><i class="bi bi-cash-coin me-1 text-warning"></i>Pending Deposits</span>
+                    <a href="/admin/deposits" class="btn btn-xs btn-link text-decoration-none p-0 small">View all</a>
+                </div>
+                <div class="card-body p-0">
+                    @if (_recentDeposits.Count == 0)
+                    {
+                        <div class="text-center text-muted py-4 small">No pending deposits</div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var d in _recentDeposits)
+                            {
+                                <div class="list-group-item px-3 py-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <div class="fw-semibold small">@(d.User?.Username ?? "Unknown")</div>
+                                            <div class="text-muted" style="font-size:0.7rem">
+                                                @d.PaymentMethod · @d.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt")
+                                            </div>
+                                        </div>
+                                        <span class="fw-bold text-success small">₱@d.Amount.ToString("N2")</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending Withdrawals -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold small"><i class="bi bi-bank me-1 text-warning"></i>Pending Withdrawals</span>
+                    <a href="/admin/withdrawals" class="btn btn-xs btn-link text-decoration-none p-0 small">View all</a>
+                </div>
+                <div class="card-body p-0">
+                    @if (_recentWithdrawals.Count == 0)
+                    {
+                        <div class="text-center text-muted py-4 small">No pending withdrawals</div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var w in _recentWithdrawals)
+                            {
+                                <div class="list-group-item px-3 py-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <div class="fw-semibold small">@(w.User?.Username ?? "Unknown")</div>
+                                            <div class="text-muted" style="font-size:0.7rem">
+                                                @w.PaymentMethod · @w.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt")
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <div class="fw-bold text-danger small">₱@w.Amount.ToString("N2")</div>
+                                            @if (w.Status == WithdrawalStatus.Processing)
+                                            {
+                                                <span class="badge bg-info" style="font-size:0.6rem">Processing</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disputes & Live Events -->
+    <div class="row g-3 mb-4">
+        <!-- Open Disputes -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold small"><i class="bi bi-exclamation-triangle-fill me-1 text-danger"></i>Open Disputes</span>
+                    <a href="/admin/disputes" class="btn btn-xs btn-link text-decoration-none p-0 small">View all</a>
+                </div>
+                <div class="card-body p-0">
+                    @if (_recentDisputes.Count == 0)
+                    {
+                        <div class="text-center text-muted py-4 small">No open disputes</div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var dispute in _recentDisputes)
+                            {
+                                <div class="list-group-item px-3 py-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div class="min-w-0 flex-grow-1 me-2">
+                                            <div class="fw-semibold small text-truncate">@(dispute.Event?.Title ?? "Unknown Event")</div>
+                                            <div class="text-muted" style="font-size:0.7rem">
+                                                Filed by @(dispute.OpenedByUser?.Username ?? "?") · @dispute.CreatedAt.ToLocalTime().ToString("MMM d")
+                                            </div>
+                                        </div>
+                                        @if (dispute.Status == DisputeStatus.UnderReview)
+                                        {
+                                            <span class="badge bg-warning text-dark" style="font-size:0.6rem">Under Review</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger" style="font-size:0.6rem">Open</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Events -->
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="fw-semibold small"><i class="bi bi-calendar-event me-1 text-success"></i>Live Events</span>
+                    <a href="/admin/events" class="btn btn-xs btn-link text-decoration-none p-0 small">View all</a>
+                </div>
+                <div class="card-body p-0">
+                    @if (_liveEventList.Count == 0)
+                    {
+                        <div class="text-center text-muted py-4 small">No live events</div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var ev in _liveEventList)
+                            {
+                                <div class="list-group-item px-3 py-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div class="min-w-0 flex-grow-1 me-2">
+                                            <div class="fw-semibold small text-truncate">@ev.Title</div>
+                                            <div class="text-muted" style="font-size:0.7rem">
+                                                @ev.EventType · @ev.BetEntries.Count participant(s)
+                                            </div>
+                                        </div>
+                                        @if (ev.Status == EventStatus.Active)
+                                        {
+                                            <span class="badge bg-success" style="font-size:0.6rem">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-primary" style="font-size:0.6rem">Open</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Row: Platform Stats -->
+    <div class="row g-3">
+        <!-- Users by Rank -->
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header py-2">
+                    <span class="fw-semibold small"><i class="bi bi-bar-chart-steps me-1 text-primary"></i>Users by Rank</span>
+                </div>
+                <div class="card-body py-2">
+                    @foreach (var (tier, count) in _usersByRank)
+                    {
+                        var pct = _totalUsers > 0 ? (int)(count * 100.0 / _totalUsers) : 0;
+                        var color = tier switch {
+                            RankTier.Legend    => "warning",
+                            RankTier.Elite     => "danger",
+                            RankTier.Veteran   => "info",
+                            RankTier.Contender => "primary",
+                            _                  => "secondary"
+                        };
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>@tier</span>
+                                <span class="text-muted">@count</span>
+                            </div>
+                            <div class="progress" style="height:6px">
+                                <div class="progress-bar bg-@color" style="width:@pct%"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Events by Status -->
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header py-2">
+                    <span class="fw-semibold small"><i class="bi bi-pie-chart me-1 text-success"></i>Events by Status</span>
+                </div>
+                <div class="card-body py-2">
+                    @foreach (var (status, count) in _eventsByStatus)
+                    {
+                        var color = status switch {
+                            EventStatus.Active    => "success",
+                            EventStatus.Open      => "primary",
+                            EventStatus.Disputed  => "danger",
+                            EventStatus.Completed => "secondary",
+                            EventStatus.Cancelled => "light",
+                            _                     => "secondary"
+                        };
+                        var textColor = status == EventStatus.Cancelled ? "text-muted" : $"text-{color}";
+                        <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                            <span class="small @textColor fw-semibold">@status</span>
+                            <span class="badge bg-@color @(status == EventStatus.Cancelled ? "text-dark" : "")">@count</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Finance Snapshot -->
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header py-2">
+                    <span class="fw-semibold small"><i class="bi bi-currency-exchange me-1 text-purple"></i>Finance Snapshot</span>
+                </div>
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                        <span class="small text-muted">Available Float</span>
+                        <span class="fw-semibold small">₱@_floatAvailable.ToString("N0")</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                        <span class="small text-muted">Locked in Bets</span>
+                        <span class="fw-semibold small">₱@_floatLocked.ToString("N0")</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                        <span class="small text-muted">Pending Withdrawal</span>
+                        <span class="fw-semibold small">₱@_floatPending.ToString("N0")</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                        <span class="small text-muted">Total Deposited</span>
+                        <span class="fw-semibold small text-success">₱@_totalDeposited.ToString("N0")</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center py-1">
+                        <span class="small text-muted">Total Withdrawn</span>
+                        <span class="fw-semibold small text-danger">₱@_totalWithdrawn.ToString("N0")</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+
+    // KPI
+    private int _totalUsers;
+    private int _newUsersToday;
+    private int _liveEvents;
+    private int _openEvents;
+    private int _activeEvents;
+    private decimal _platformFloat;
+    private int _pendingDeposits;
+    private decimal _pendingDepositAmount;
+    private int _pendingWithdrawals;
+    private decimal _pendingWithdrawalAmount;
+    private int _openDisputes;
+
+    // Lists
+    private List<TopUpRequest> _recentDeposits = new();
+    private List<WithdrawalRequest> _recentWithdrawals = new();
+    private List<Dispute> _recentDisputes = new();
+    private List<Event> _liveEventList = new();
+
+    // Charts
+    private List<(RankTier Tier, int Count)> _usersByRank = new();
+    private List<(EventStatus Status, int Count)> _eventsByStatus = new();
+
+    // Finance
+    private decimal _floatAvailable;
+    private decimal _floatLocked;
+    private decimal _floatPending;
+    private decimal _totalDeposited;
+    private decimal _totalWithdrawn;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        var today = DateTime.UtcNow.Date;
+
+        var usersTask        = Db.KazeUsers.CountAsync();
+        var newTodayTask     = Db.KazeUsers.CountAsync(u => u.CreatedAt >= today);
+        var walletSumsTask   = Db.Wallets.GroupBy(w => 1).Select(g => new {
+                                   Available = g.Sum(w => w.AvailableBalance),
+                                   Locked    = g.Sum(w => w.LockedBalance),
+                                   Pending   = g.Sum(w => w.PendingWithdrawalBalance)
+                               }).FirstOrDefaultAsync();
+
+        var depositCountTask  = Db.TopUpRequests.CountAsync(t => t.Status == TopUpStatus.Pending);
+        var depositAmtTask    = Db.TopUpRequests.Where(t => t.Status == TopUpStatus.Pending).SumAsync(t => (decimal?)t.Amount) ?? Task.FromResult((decimal?)0);
+        var withdrawCountTask = Db.WithdrawalRequests.CountAsync(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing);
+        var withdrawAmtTask   = Db.WithdrawalRequests.Where(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing).SumAsync(w => (decimal?)w.Amount) ?? Task.FromResult((decimal?)0);
+        var disputeCountTask  = Db.Disputes.CountAsync(d => d.Status != DisputeStatus.Resolved);
+
+        var openEventsTask   = Db.Events.CountAsync(e => e.Status == EventStatus.Open);
+        var activeEventsTask = Db.Events.CountAsync(e => e.Status == EventStatus.Active);
+
+        var recentDepositsTask    = Db.TopUpRequests.Include(t => t.User)
+                                      .Where(t => t.Status == TopUpStatus.Pending)
+                                      .OrderByDescending(t => t.CreatedAt).Take(5).ToListAsync();
+        var recentWithdrawalsTask = Db.WithdrawalRequests.Include(w => w.User)
+                                      .Where(w => w.Status == WithdrawalStatus.Pending || w.Status == WithdrawalStatus.Processing)
+                                      .OrderByDescending(w => w.CreatedAt).Take(5).ToListAsync();
+        var recentDisputesTask    = Db.Disputes.Include(d => d.Event).Include(d => d.OpenedByUser)
+                                      .Where(d => d.Status != DisputeStatus.Resolved)
+                                      .OrderByDescending(d => d.CreatedAt).Take(5).ToListAsync();
+        var liveEventsTask        = Db.Events.Include(e => e.BetEntries)
+                                      .Where(e => e.Status == EventStatus.Open || e.Status == EventStatus.Active)
+                                      .OrderByDescending(e => e.CreatedAt).Take(6).ToListAsync();
+
+        var rankGroupTask  = Db.KazeUsers.GroupBy(u => u.RankTier)
+                               .Select(g => new { Tier = g.Key, Count = g.Count() }).ToListAsync();
+        var statusGroupTask = Db.Events.GroupBy(e => e.Status)
+                               .Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+
+        var totalDepositedTask  = Db.TopUpRequests.Where(t => t.Status == TopUpStatus.Approved).SumAsync(t => (decimal?)t.Amount);
+        var totalWithdrawnTask  = Db.WithdrawalRequests.Where(w => w.Status == WithdrawalStatus.Completed).SumAsync(w => (decimal?)w.NetAmount);
+
+        await Task.WhenAll(
+            usersTask, newTodayTask, walletSumsTask,
+            depositCountTask, depositAmtTask, withdrawCountTask, withdrawAmtTask, disputeCountTask,
+            openEventsTask, activeEventsTask,
+            recentDepositsTask, recentWithdrawalsTask, recentDisputesTask, liveEventsTask,
+            rankGroupTask, statusGroupTask,
+            totalDepositedTask, totalWithdrawnTask
+        );
+
+        _totalUsers     = await usersTask;
+        _newUsersToday  = await newTodayTask;
+
+        var ws = await walletSumsTask;
+        _floatAvailable  = ws?.Available ?? 0;
+        _floatLocked     = ws?.Locked ?? 0;
+        _floatPending    = ws?.Pending ?? 0;
+        _platformFloat   = _floatAvailable + _floatLocked + _floatPending;
+
+        _pendingDeposits       = await depositCountTask;
+        _pendingDepositAmount  = (await depositAmtTask) ?? 0;
+        _pendingWithdrawals    = await withdrawCountTask;
+        _pendingWithdrawalAmount = (await withdrawAmtTask) ?? 0;
+        _openDisputes          = await disputeCountTask;
+
+        _openEvents   = await openEventsTask;
+        _activeEvents = await activeEventsTask;
+        _liveEvents   = _openEvents + _activeEvents;
+
+        _recentDeposits    = await recentDepositsTask;
+        _recentWithdrawals = await recentWithdrawalsTask;
+        _recentDisputes    = await recentDisputesTask;
+        _liveEventList     = await liveEventsTask;
+
+        var rankGroups = await rankGroupTask;
+        _usersByRank = Enum.GetValues<RankTier>()
+            .Select(t => (t, rankGroups.FirstOrDefault(g => g.Tier == t)?.Count ?? 0))
+            .OrderByDescending(x => (int)x.t)
+            .ToList();
+
+        var statusGroups = await statusGroupTask;
+        _eventsByStatus = statusGroups
+            .Select(g => (g.Status, g.Count))
+            .OrderBy(x => x.Status)
+            .ToList();
+
+        _totalDeposited = (await totalDepositedTask) ?? 0;
+        _totalWithdrawn = (await totalWithdrawnTask) ?? 0;
+
+        _loading = false;
+    }
+}
