@@ -1,7 +1,624 @@
 @page "/admin/events"
 @rendermode InteractiveServer
+@inject KazeDbContext Db
+@inject IEventService EventService
+@inject IWalletService WalletService
 
 <PageTitle>Events – KazePH Admin</PageTitle>
 
-<h1>Events</h1>
-<p>Coming soon.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-calendar-event me-2 text-primary"></i>Events</h4>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+</div>
+
+<!-- Status filter tabs -->
+<ul class="nav nav-pills mb-3 flex-wrap">
+    @foreach (var tab in new[] { "All", "Open", "Active", "Disputed", "Completed", "Cancelled", "Draft" })
+    {
+        var cnt = CountForTab(tab);
+        <li class="nav-item me-1 mb-1">
+            <button class="nav-link @(StatusFilter == tab ? "active" : "")" @onclick="() => StatusFilter = tab">
+                @tab
+                @if (cnt > 0 && tab != "All" && tab != "Completed" && tab != "Cancelled" && tab != "Draft")
+                {
+                    <span class="badge ms-1 @TabBadge(tab)">@cnt</span>
+                }
+            </button>
+        </li>
+    }
+</ul>
+
+<!-- Type toggle + search -->
+<div class="d-flex flex-wrap gap-2 mb-4">
+    <input type="text" class="form-control" style="max-width:260px"
+           placeholder="Search by title…" @bind="Search" @bind:event="oninput" />
+    <div class="btn-group btn-group-sm">
+        <button class="btn @(TypeFilter == ""         ? "btn-primary" : "btn-outline-secondary")" @onclick='() => TypeFilter = ""'>All Types</button>
+        <button class="btn @(TypeFilter == "OneVsOne" ? "btn-primary" : "btn-outline-secondary")" @onclick='() => TypeFilter = "OneVsOne"'>1v1</button>
+        <button class="btn @(TypeFilter == "Pool"     ? "btn-primary" : "btn-outline-secondary")" @onclick='() => TypeFilter = "Pool"'>Pool</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else if (_filtered.Count == 0)
+{
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-calendar-x fs-2 d-block mb-2"></i>No events match your filters.
+    </div>
+}
+else
+{
+    <div class="text-muted small mb-2">Showing @_filtered.Count of @_allEvents.Count events</div>
+
+    <!-- Desktop Table -->
+    <div class="table-responsive d-none d-md-block">
+        <table class="table table-hover table-bordered align-middle bg-white">
+            <thead class="table-light">
+                <tr>
+                    <th>Event</th>
+                    <th>Creator</th>
+                    <th>Sides</th>
+                    <th>Entries / Pot</th>
+                    <th>Event Date</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ev in _filtered)
+                {
+                    <tr style="cursor:pointer" @onclick="() => OpenDetailAsync(ev)">
+                        <td>
+                            <div class="fw-semibold">@ev.Title</div>
+                            <span class="badge @TypeBadge(ev.EventType) me-1">@TypeLabel(ev.EventType)</span>
+                            @if (!string.IsNullOrEmpty(ev.Description))
+                            {
+                                <span class="text-muted small">@(ev.Description.Length > 60 ? ev.Description[..60] + "…" : ev.Description)</span>
+                            }
+                        </td>
+                        <td class="small">@(ev.Creator?.Username ?? ev.CreatorId[..8] + "…")</td>
+                        <td>
+                            <span class="badge bg-primary me-1">@ev.SideA</span>
+                            <span class="text-muted small">vs</span>
+                            <span class="badge bg-warning text-dark ms-1">@ev.SideB</span>
+                        </td>
+                        <td class="small">
+                            <div>@ev.BetEntries.Count participant(s)</div>
+                            <div class="fw-semibold text-success">₱@ev.BetEntries.Sum(b => b.Amount).ToString("N2")</div>
+                        </td>
+                        <td class="text-muted small">@ev.EventDate.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</td>
+                        <td><span class="badge @StatusBadge(ev.Status)">@ev.Status</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" @onclick:stopPropagation="true" @onclick="() => OpenDetailAsync(ev)">
+                                <i class="bi bi-folder2-open"></i>
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Mobile Card List -->
+    <div class="d-flex d-md-none flex-column gap-3">
+        @foreach (var ev in _filtered)
+        {
+            <div class="card p-3" style="cursor:pointer" @onclick="() => OpenDetailAsync(ev)">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="fw-semibold">@ev.Title</div>
+                        <span class="badge @TypeBadge(ev.EventType)">@TypeLabel(ev.EventType)</span>
+                    </div>
+                    <span class="badge @StatusBadge(ev.Status)">@ev.Status</span>
+                </div>
+                <div class="small text-muted d-flex justify-content-between">
+                    <span>@(ev.Creator?.Username ?? "—") · @ev.BetEntries.Count entries</span>
+                    <span class="fw-semibold text-success">₱@ev.BetEntries.Sum(b => b.Amount).ToString("N2")</span>
+                </div>
+                <div class="small text-muted mt-1">@ev.EventDate.ToLocalTime().ToString("MMM d, yyyy")</div>
+            </div>
+        }
+    </div>
+}
+
+<!-- ── Event Detail Modal ─────────────────────────────────────────────────────── -->
+@if (_active is not null)
+{
+    var totalPot = _active.BetEntries.Sum(b => b.Amount);
+    var sideAEntries = _active.BetEntries.Where(b => b.Side == "A").ToList();
+    var sideBEntries = _active.BetEntries.Where(b => b.Side == "B").ToList();
+    var sideAPot = sideAEntries.Sum(b => b.Amount);
+    var sideBPot = sideBEntries.Sum(b => b.Amount);
+
+    <div class="modal-backdrop fade show" style="opacity:.6;z-index:1040"></div>
+    <div class="modal d-block" tabindex="-1" style="z-index:1050;overflow-y:auto">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content shadow-lg">
+
+                <!-- Header -->
+                <div class="modal-header bg-light border-bottom">
+                    <div>
+                        <h5 class="modal-title mb-1 fw-bold">@_active.Title</h5>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <span class="badge @StatusBadge(_active.Status) fs-6">@_active.Status</span>
+                            <span class="badge @TypeBadge(_active.EventType)">@TypeLabel(_active.EventType)</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close ms-auto" @onclick="CloseDetail"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <!-- Info + Pot row -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.7rem;letter-spacing:.07em">Event Info</h6>
+                                    @if (!string.IsNullOrWhiteSpace(_active.Description))
+                                    {
+                                        <p class="small text-muted mb-3">@_active.Description</p>
+                                    }
+                                    <dl class="row small mb-0">
+                                        <dt class="col-5 text-muted fw-normal">Creator</dt>
+                                        <dd class="col-7">@(_active.Creator?.Username ?? _active.CreatorId[..8] + "…")</dd>
+                                        <dt class="col-5 text-muted fw-normal">Event Date</dt>
+                                        <dd class="col-7">@_active.EventDate.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</dd>
+                                        <dt class="col-5 text-muted fw-normal">Created</dt>
+                                        <dd class="col-7">@_active.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</dd>
+                                        @if (_active.EventType == EventType.OneVsOne && !string.IsNullOrEmpty(_active.ChallengedUsername))
+                                        {
+                                            <dt class="col-5 text-muted fw-normal">Challenged</dt>
+                                            <dd class="col-7">@_active.ChallengedUsername</dd>
+                                        }
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.7rem;letter-spacing:.07em">Stakes & Pot</h6>
+                                    <div class="mb-3">
+                                        <div class="text-muted small mb-1">Total Pot</div>
+                                        <div class="fs-4 fw-bold text-success">₱@totalPot.ToString("N2")</div>
+                                        <div class="text-muted small">@_active.BetEntries.Count participant(s)</div>
+                                    </div>
+                                    @if (_active.EventType == EventType.OneVsOne)
+                                    {
+                                        <dl class="row small mb-0">
+                                            <dt class="col-6 text-muted fw-normal">Creator stake</dt>
+                                            <dd class="col-6">₱@(_active.CreatorStake?.ToString("N2") ?? "—")</dd>
+                                            <dt class="col-6 text-muted fw-normal">Opponent stake</dt>
+                                            <dd class="col-6">₱@(_active.OpponentStake?.ToString("N2") ?? "—")</dd>
+                                        </dl>
+                                    }
+                                    else if (_active.StakeAmount.HasValue)
+                                    {
+                                        <div class="small text-muted">Min stake: <strong>₱@_active.StakeAmount.Value.ToString("N2")</strong></div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Participants by side -->
+                    <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:0.7rem;letter-spacing:.07em">Participants</h6>
+                    <div class="row g-0 border rounded mb-4 overflow-hidden">
+                        <!-- Side A -->
+                        <div class="col-6 p-3 bg-light" style="border-right:1px solid #dee2e6">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="badge bg-primary">@_active.SideA</span>
+                                <span class="small fw-semibold text-success">₱@sideAPot.ToString("N2")</span>
+                            </div>
+                            @if (!sideAEntries.Any())
+                            {
+                                <div class="text-muted small fst-italic">No entries yet</div>
+                            }
+                            else
+                            {
+                                @foreach (var e in sideAEntries)
+                                {
+                                    <div class="d-flex justify-content-between align-items-center small py-1 border-bottom">
+                                        <span>
+                                            @(e.User?.Username ?? e.UserId[..8] + "…")
+                                            @if (e.UserId == _active.CreatorId)
+                                            {
+                                                <span class="badge bg-secondary ms-1" style="font-size:0.65rem">creator</span>
+                                            }
+                                        </span>
+                                        <span class="fw-semibold text-success">₱@e.Amount.ToString("N2")</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <!-- Side B -->
+                        <div class="col-6 p-3 bg-light">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="badge bg-warning text-dark">@_active.SideB</span>
+                                <span class="small fw-semibold text-success">₱@sideBPot.ToString("N2")</span>
+                            </div>
+                            @if (!sideBEntries.Any())
+                            {
+                                <div class="text-muted small fst-italic">No entries yet</div>
+                            }
+                            else
+                            {
+                                @foreach (var e in sideBEntries)
+                                {
+                                    <div class="d-flex justify-content-between align-items-center small py-1 border-bottom">
+                                        <span>
+                                            @(e.User?.Username ?? e.UserId[..8] + "…")
+                                            @if (e.UserId == _active.CreatorId)
+                                            {
+                                                <span class="badge bg-secondary ms-1" style="font-size:0.65rem">creator</span>
+                                            }
+                                        </span>
+                                        <span class="fw-semibold text-success">₱@e.Amount.ToString("N2")</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Result declarations (1v1 with declarations) -->
+                    @if (_active.EventType == EventType.OneVsOne && _active.ResultDeclarations.Any())
+                    {
+                        <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:0.7rem;letter-spacing:.07em">Result Declarations</h6>
+                        <div class="d-flex flex-column gap-2 mb-4">
+                            @foreach (var decl in _active.ResultDeclarations)
+                            {
+                                var declaredName = decl.DeclaredWinningSide == "A" ? _active.SideA
+                                                 : decl.DeclaredWinningSide == "B" ? _active.SideB
+                                                 : "Draw";
+                                <div class="d-flex align-items-center gap-2 small">
+                                    <span class="fw-semibold">@(decl.DeclaringUser?.Username ?? decl.DeclaringUserId[..8] + "…")</span>
+                                    <span class="text-muted">declared</span>
+                                    <span class="badge @(decl.DeclaredWinningSide == "A" ? "bg-primary" : decl.DeclaredWinningSide == "B" ? "bg-warning text-dark" : "bg-secondary")">@declaredName wins</span>
+                                    <span class="text-muted ms-auto">@decl.DeclaredAt.ToLocalTime().ToString("MMM d, h:mm tt")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Completed result -->
+                    @if (_active.Result is not null)
+                    {
+                        var winnerName = _active.Result.DeclaredWinningSide == "A" ? _active.SideA
+                                       : _active.Result.DeclaredWinningSide == "B" ? _active.SideB
+                                       : "Draw";
+                        <div class="alert @(_active.Result.DeclaredWinningSide == "Draw" ? "alert-secondary" : "alert-success") py-2">
+                            <i class="bi bi-trophy-fill me-2"></i>
+                            <strong>Result:</strong> @winnerName
+                            @if (_active.Result.AdminVerified)
+                            {
+                                <span class="badge bg-danger ms-2">Admin Ruling</span>
+                            }
+                            <span class="text-muted small ms-2">@_active.Result.DeclaredAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</span>
+                        </div>
+                    }
+
+                    <!-- Cancel confirmation -->
+                    @if (_showCancelConfirm)
+                    {
+                        <div class="alert alert-warning d-flex flex-column gap-2">
+                            <div class="fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>Cancel this event?</div>
+                            <div class="small">All @_active.BetEntries.Count locked stake(s) totalling <strong>₱@totalPot.ToString("N2")</strong> will be returned to participants.</div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-danger btn-sm" @onclick="CancelEventAsync" disabled="@_acting">
+                                    @if (_acting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                    Confirm Cancel
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => _showCancelConfirm = false" disabled="@_acting">Back</button>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Force declare confirmation -->
+                    @if (_showForceConfirm)
+                    {
+                        <div class="alert alert-danger d-flex flex-column gap-2">
+                            <div class="fw-semibold"><i class="bi bi-gavel me-1"></i>Admin Force Declare</div>
+                            <div class="small text-muted">Pick the winning side. Payouts will be settled immediately.</div>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-sm @(_forceWinningSide == "A" ? "btn-primary" : "btn-outline-primary")"
+                                        @onclick='() => _forceWinningSide = "A"'>
+                                    <i class="bi bi-trophy me-1"></i>@_active.SideA Wins
+                                </button>
+                                <button class="btn btn-sm @(_forceWinningSide == "B" ? "btn-warning text-dark" : "btn-outline-warning")"
+                                        @onclick='() => _forceWinningSide = "B"'>
+                                    <i class="bi bi-trophy me-1"></i>@_active.SideB Wins
+                                </button>
+                                <button class="btn btn-sm @(_forceWinningSide == "Draw" ? "btn-secondary" : "btn-outline-secondary")"
+                                        @onclick='() => _forceWinningSide = "Draw"'>
+                                    <i class="bi bi-dash-circle me-1"></i>Draw — Refund All
+                                </button>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-danger btn-sm" @onclick="ForceDeclareAsync"
+                                        disabled="@(_acting || string.IsNullOrEmpty(_forceWinningSide))">
+                                    @if (_acting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                    Confirm & Settle
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="ResetForceConfirm" disabled="@_acting">Back</button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_actionSuccess))
+                    {
+                        <div class="alert alert-success py-2 small"><i class="bi bi-check-circle-fill me-1"></i>@_actionSuccess</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_actionError))
+                    {
+                        <div class="alert alert-danger py-2 small">@_actionError</div>
+                    }
+                </div>
+
+                <!-- Footer -->
+                <div class="modal-footer flex-wrap gap-2">
+                    @if (!_showCancelConfirm && !_showForceConfirm)
+                    {
+                        @if (CanCancel(_active.Status))
+                        {
+                            <button class="btn btn-outline-danger btn-sm" @onclick="ShowCancelConfirm">
+                                <i class="bi bi-x-circle me-1"></i>Cancel Event
+                            </button>
+                        }
+                        @if (CanForceDeclare(_active.Status))
+                        {
+                            <button class="btn btn-danger btn-sm" @onclick="ShowForceConfirm">
+                                <i class="bi bi-gavel me-1"></i>Force Declare Result
+                            </button>
+                        }
+                    }
+                    <button class="btn btn-secondary btn-sm ms-auto" @onclick="CloseDetail">Close</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _acting;
+
+    private string _statusFilterRaw = "All";
+    private string StatusFilter { get => _statusFilterRaw; set { _statusFilterRaw = value; ApplyFilters(); } }
+
+    private string _typeFilterRaw = string.Empty;
+    private string TypeFilter { get => _typeFilterRaw; set { _typeFilterRaw = value; ApplyFilters(); } }
+
+    private string _searchRaw = string.Empty;
+    private string Search { get => _searchRaw; set { _searchRaw = value; ApplyFilters(); } }
+
+    private List<Event> _allEvents = new();
+    private List<Event> _filtered = new();
+
+    private Event? _active;
+    private string _forceWinningSide = string.Empty;
+    private bool _showCancelConfirm;
+    private bool _showForceConfirm;
+    private string _actionSuccess = string.Empty;
+    private string _actionError = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _active = null;
+        _allEvents = await Db.Events
+            .Include(e => e.Creator)
+            .Include(e => e.BetEntries)
+            .OrderByDescending(e => e.CreatedAt)
+            .ToListAsync();
+        ApplyFilters();
+        _loading = false;
+    }
+
+    private void ApplyFilters()
+    {
+        var q = _allEvents.AsEnumerable();
+
+        if (_statusFilterRaw != "All" && Enum.TryParse<EventStatus>(_statusFilterRaw, out var status))
+            q = q.Where(e => e.Status == status);
+
+        if (!string.IsNullOrEmpty(_typeFilterRaw) && Enum.TryParse<EventType>(_typeFilterRaw, out var type))
+            q = q.Where(e => e.EventType == type);
+
+        if (!string.IsNullOrWhiteSpace(_searchRaw))
+            q = q.Where(e => e.Title.Contains(_searchRaw, StringComparison.OrdinalIgnoreCase));
+
+        _filtered = q.ToList();
+    }
+
+    private async Task OpenDetailAsync(Event ev)
+    {
+        _active = await Db.Events
+            .Include(e => e.Creator)
+            .Include(e => e.BetEntries).ThenInclude(b => b.User)
+            .Include(e => e.Result)
+            .Include(e => e.ResultDeclarations).ThenInclude(d => d.DeclaringUser)
+            .FirstOrDefaultAsync(e => e.Id == ev.Id);
+
+        _showCancelConfirm = false;
+        _showForceConfirm = false;
+        _forceWinningSide = string.Empty;
+        _actionSuccess = string.Empty;
+        _actionError = string.Empty;
+    }
+
+    private void CloseDetail() => _active = null;
+
+    private void ShowCancelConfirm() { _showCancelConfirm = true; _actionError = _actionSuccess = string.Empty; }
+    private void ShowForceConfirm()  { _showForceConfirm  = true; _actionError = _actionSuccess = string.Empty; }
+    private void ResetForceConfirm() { _showForceConfirm  = false; _forceWinningSide = string.Empty; }
+
+    private async Task CancelEventAsync()
+    {
+        if (_active is null) return;
+        _acting = true; _actionSuccess = string.Empty; _actionError = string.Empty;
+        try
+        {
+            await EventService.CancelEventAsync(_active.Id);
+            await ReloadActiveAsync();
+            _showCancelConfirm = false;
+            _actionSuccess = "Event cancelled and all stakes returned to participants.";
+        }
+        catch (Exception ex) { _actionError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private async Task ForceDeclareAsync()
+    {
+        if (_active is null || string.IsNullOrEmpty(_forceWinningSide)) return;
+        _acting = true; _actionSuccess = string.Empty; _actionError = string.Empty;
+        try
+        {
+            await using var tx = await Db.Database.BeginTransactionAsync();
+
+            var ev = await Db.Events
+                .Include(e => e.BetEntries)
+                .FirstOrDefaultAsync(e => e.Id == _active.Id)
+                ?? throw new InvalidOperationException("Event not found.");
+
+            if (_forceWinningSide == "Draw")
+            {
+                foreach (var entry in ev.BetEntries)
+                {
+                    await WalletService.ReleaseFundsAsync(entry.UserId, entry.Amount);
+                    WalletService.Log(entry.UserId, WalletTransactionType.DrawRefund, entry.Amount,
+                        $"Draw (Admin ruling): {ev.Title}", ev.Id);
+                }
+            }
+            else
+            {
+                var winners = ev.BetEntries.Where(b => b.Side == _forceWinningSide).ToList();
+                var losers  = ev.BetEntries.Where(b => b.Side != _forceWinningSide).ToList();
+                decimal loserPot  = losers.Sum(b => b.Amount);
+                decimal winnerPot = winners.Sum(b => b.Amount);
+                var winningSideName = _forceWinningSide == "A" ? ev.SideA : ev.SideB;
+                var losingSideName  = _forceWinningSide == "A" ? ev.SideB : ev.SideA;
+
+                foreach (var w in winners)
+                {
+                    await WalletService.ReleaseFundsAsync(w.UserId, w.Amount);
+                    WalletService.Log(w.UserId, WalletTransactionType.StakeReleased, w.Amount,
+                        $"Stake returned: {ev.Title}", ev.Id);
+                    if (loserPot > 0 && winnerPot > 0)
+                    {
+                        var share = Math.Round((w.Amount / winnerPot) * loserPot, 2, MidpointRounding.ToEven);
+                        await WalletService.CreditFundsAsync(w.UserId, share);
+                        WalletService.Log(w.UserId, WalletTransactionType.WinningsReceived, share,
+                            $"Won (Admin ruling – {winningSideName}): {ev.Title}", ev.Id);
+                    }
+                }
+                foreach (var l in losers)
+                {
+                    var wallet = await Db.Wallets.FirstOrDefaultAsync(w => w.UserId == l.UserId)
+                        ?? throw new InvalidOperationException($"Wallet not found for user {l.UserId}.");
+                    wallet.LockedBalance -= l.Amount;
+                    wallet.UpdatedAt = DateTime.UtcNow;
+                    WalletService.Log(l.UserId, WalletTransactionType.StakeForfeited, l.Amount,
+                        $"Lost (Admin ruling – {losingSideName}): {ev.Title}", ev.Id);
+                }
+                await Db.SaveChangesAsync();
+            }
+
+            Db.EventResults.Add(new EventResult
+            {
+                Id                  = Guid.NewGuid(),
+                EventId             = ev.Id,
+                DeclaredWinningSide = _forceWinningSide,
+                DeclaredAt          = DateTime.UtcNow,
+                AdminVerified       = true
+            });
+            ev.Status = EventStatus.Completed;
+            await Db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await ReloadActiveAsync();
+            _showForceConfirm = false;
+            _forceWinningSide = string.Empty;
+            _actionSuccess = "Result declared and payouts settled.";
+        }
+        catch (Exception ex) { _actionError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private async Task ReloadActiveAsync()
+    {
+        if (_active is null) return;
+        var id = _active.Id;
+        _active = await Db.Events
+            .Include(e => e.Creator)
+            .Include(e => e.BetEntries).ThenInclude(b => b.User)
+            .Include(e => e.Result)
+            .Include(e => e.ResultDeclarations).ThenInclude(d => d.DeclaringUser)
+            .FirstOrDefaultAsync(e => e.Id == id);
+
+        var idx = _allEvents.FindIndex(e => e.Id == id);
+        if (idx >= 0 && _active is not null) _allEvents[idx] = _active;
+        ApplyFilters();
+    }
+
+    private int CountForTab(string tab) => tab switch
+    {
+        "All"       => _allEvents.Count,
+        "Open"      => _allEvents.Count(e => e.Status == EventStatus.Open),
+        "Active"    => _allEvents.Count(e => e.Status == EventStatus.Active),
+        "Disputed"  => _allEvents.Count(e => e.Status == EventStatus.Disputed),
+        "Completed" => _allEvents.Count(e => e.Status == EventStatus.Completed),
+        "Cancelled" => _allEvents.Count(e => e.Status == EventStatus.Cancelled),
+        "Draft"     => _allEvents.Count(e => e.Status == EventStatus.Draft),
+        _           => 0
+    };
+
+    private static bool CanCancel(EventStatus s)
+        => s is not (EventStatus.Completed or EventStatus.Cancelled);
+
+    private static bool CanForceDeclare(EventStatus s)
+        => s is EventStatus.Active or EventStatus.Disputed;
+
+    private static string StatusBadge(EventStatus s) => s switch
+    {
+        EventStatus.Open      => "bg-primary",
+        EventStatus.Active    => "bg-info text-dark",
+        EventStatus.Completed => "bg-success",
+        EventStatus.Disputed  => "bg-danger",
+        EventStatus.Cancelled => "bg-secondary",
+        EventStatus.Draft     => "bg-light text-dark border",
+        _                     => "bg-secondary"
+    };
+
+    private static string TabBadge(string tab) => tab switch
+    {
+        "Disputed" => "bg-danger",
+        "Active"   => "bg-info text-dark",
+        "Open"     => "bg-warning text-dark",
+        _          => "bg-secondary"
+    };
+
+    private static string TypeBadge(EventType t) => t switch
+    {
+        EventType.OneVsOne => "bg-warning text-dark",
+        EventType.Pool     => "bg-info text-dark",
+        _                  => "bg-secondary"
+    };
+
+    private static string TypeLabel(EventType t) => t switch
+    {
+        EventType.OneVsOne => "1v1",
+        EventType.Pool     => "Pool",
+        _                  => t.ToString()
+    };
+}
