@@ -200,8 +200,8 @@ public class EventService : IEventService
             throw new InvalidOperationException("Only 1v1 events use the dual-declaration flow.");
         if (ev.Status != EventStatus.Active)
             throw new InvalidOperationException("Can only submit a declaration for an active event.");
-        if (declaredWinningSide != "A" && declaredWinningSide != "B")
-            throw new InvalidOperationException("Declared winning side must be 'A' or 'B'.");
+        if (declaredWinningSide != "A" && declaredWinningSide != "B" && declaredWinningSide != "Draw")
+            throw new InvalidOperationException("Declared winning side must be 'A', 'B', or 'Draw'.");
 
         var myEntry = ev.BetEntries.FirstOrDefault(b => b.UserId == userId)
             ?? throw new InvalidOperationException("You are not a participant in this event.");
@@ -228,19 +228,20 @@ public class EventService : IEventService
 
             if (allDeclarations.Count == 2)
             {
-                var decA = allDeclarations.First(d =>
-                    ev.BetEntries.First(b => b.UserId == d.DeclaringUserId).Side == "A");
-                var decB = allDeclarations.First(d =>
-                    ev.BetEntries.First(b => b.UserId == d.DeclaringUserId).Side == "B");
+                var dec1 = allDeclarations[0];
+                var dec2 = allDeclarations[1];
 
-                if (decA.DeclaredWinningSide == decB.DeclaredWinningSide)
+                if (dec1.DeclaredWinningSide == dec2.DeclaredWinningSide)
                 {
-                    // Both agree — settle the winner
-                    await SettleWinnerInternalAsync(ev, decA.DeclaredWinningSide, cancellationToken);
+                    // Both agree on the same outcome
+                    if (dec1.DeclaredWinningSide == "Draw")
+                        await SettleDrawInternalAsync(ev, cancellationToken);
+                    else
+                        await SettleWinnerInternalAsync(ev, dec1.DeclaredWinningSide, cancellationToken);
                 }
-                else if (decA.DeclaredWinningSide == "A" && decB.DeclaredWinningSide == "B")
+                else
                 {
-                    // Both claim victory — escalate to dispute
+                    // Declarations differ — escalate to dispute regardless of which buttons were chosen
                     _db.Disputes.Add(new Dispute
                     {
                         Id             = Guid.NewGuid(),
@@ -251,11 +252,6 @@ public class EventService : IEventService
                     });
                     ev.Status = EventStatus.Disputed;
                     await _db.SaveChangesAsync(cancellationToken);
-                }
-                else
-                {
-                    // Both declare they lost — draw
-                    await SettleDrawInternalAsync(ev, cancellationToken);
                 }
             }
 
@@ -406,6 +402,35 @@ public class EventService : IEventService
             await tx.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task RejectChallengeAsync(Guid eventId, string rejectingUserId, CancellationToken cancellationToken = default)
+    {
+        var ev = await _db.Events
+            .Include(e => e.BetEntries)
+            .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken)
+            ?? throw new InvalidOperationException("Event not found.");
+
+        if (ev.EventType != EventType.OneVsOne)
+            throw new InvalidOperationException("Only 1v1 challenges can be rejected.");
+        if (ev.Status != EventStatus.Open)
+            throw new InvalidOperationException("This challenge is no longer open.");
+        if (ev.CreatorId == rejectingUserId)
+            throw new InvalidOperationException("You cannot reject your own challenge. Use cancel instead.");
+        if (ev.ChallengedUserId is not null && ev.ChallengedUserId != rejectingUserId)
+            throw new InvalidOperationException("This challenge was sent to a specific user and cannot be rejected by you.");
+
+        // Release creator's locked stake and cancel the event
+        foreach (var entry in ev.BetEntries)
+        {
+            await _walletService.ReleaseFundsAsync(entry.UserId, entry.Amount, cancellationToken);
+            _walletService.Log(entry.UserId, WalletTransactionType.StakeReleased, entry.Amount,
+                $"Challenge declined: {ev.Title}", ev.Id);
+        }
+
+        ev.Status = EventStatus.Cancelled;
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />

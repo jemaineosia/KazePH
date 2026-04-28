@@ -41,6 +41,15 @@ public interface IEventService
     /// <param name="opponentId">Identity ID of the user accepting the challenge.</param>
     Task AcceptChallengeAsync(Guid eventId, string opponentId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Rejects an open 1v1 challenge. Cancels the event and returns the creator's locked stake.
+    /// Only the specifically challenged user may reject a direct challenge.
+    /// For open challenges, any eligible (non-creator) user may reject.
+    /// </summary>
+    /// <param name="eventId">The 1v1 event to reject.</param>
+    /// <param name="rejectingUserId">Identity ID of the user declining the challenge.</param>
+    Task RejectChallengeAsync(Guid eventId, string rejectingUserId, CancellationToken cancellationToken = default);
+
     /// <summary>Returns events, optionally filtered by status and/or type, newest first.</summary>
     Task<List<Event>> GetEventsAsync(
         EventStatus? status = null,

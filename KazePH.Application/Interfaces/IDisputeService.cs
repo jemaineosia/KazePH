@@ -40,4 +40,21 @@ public interface IDisputeService
     /// <param name="winningSide">The declared winning side string.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task ResolveDisputeAsync(Guid disputeId, string adminNote, string winningSide, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an admin message into the dispute thread (visible to both parties).
+    /// Admin messages are stored as <see cref="KazePH.Core.Models.DisputeEvidence"/> records
+    /// with <c>IsAdminMessage = true</c>.
+    /// </summary>
+    /// <param name="disputeId">The dispute to post into.</param>
+    /// <param name="adminUserId">Identity ID of the admin posting.</param>
+    /// <param name="message">Thread message body.</param>
+    /// <param name="attachmentUrl">Optional URL to an attached file or screenshot.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<DisputeEvidence> AddAdminMessageAsync(
+        Guid disputeId,
+        string adminUserId,
+        string message,
+        string? attachmentUrl = null,
+        CancellationToken cancellationToken = default);
 }

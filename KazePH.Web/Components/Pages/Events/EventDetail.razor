@@ -217,16 +217,31 @@ else
 
                         <AuthorizeView>
                             <Authorized>
-                                <button class="btn btn-danger w-100 fw-bold py-2"
-                                        @onclick="AcceptAsync"
-                                        disabled="@(_accepting || (_availableBalance.HasValue && _availableBalance < _event.OpponentStake))">
-                                    @if (_accepting)
-                                    { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
-                                    <i class="bi bi-check-lg me-1"></i>Accept Challenge — Lock ₱@_event.OpponentStake?.ToString("N2")
-                                </button>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-danger flex-fill fw-bold py-2"
+                                            @onclick="AcceptAsync"
+                                            disabled="@(_accepting || _rejecting || (_availableBalance.HasValue && _availableBalance < _event.OpponentStake))">
+                                        @if (_accepting)
+                                        { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
+                                        <i class="bi bi-check-lg me-1"></i>Accept — Lock ₱@_event.OpponentStake?.ToString("N2")
+                                    </button>
+                                    <button class="btn btn-outline-secondary fw-bold py-2 px-3"
+                                            @onclick="RejectAsync"
+                                            disabled="@(_accepting || _rejecting)">
+                                        @if (_rejecting)
+                                        { <span class="spinner-border spinner-border-sm me-1" role="status"></span> }
+                                        else
+                                        { <i class="bi bi-x-lg me-1"></i> }
+                                        Decline
+                                    </button>
+                                </div>
                                 @if (_availableBalance.HasValue && _availableBalance < _event.OpponentStake)
                                 {
                                     <div class="text-danger small text-center mt-1">Insufficient balance. <a href="/wallet/cashin">Top up</a></div>
+                                }
+                                @if (!string.IsNullOrEmpty(_rejectError))
+                                {
+                                    <div class="alert alert-danger py-2 mt-2 mb-0">@_rejectError</div>
                                 }
                             </Authorized>
                             <NotAuthorized>
@@ -291,11 +306,12 @@ else
             <div class="card-body p-4">
                 <div class="d-flex align-items-center gap-2 mb-2">
                     <i class="bi bi-shield-exclamation text-danger fs-4"></i>
-                    <h6 class="fw-bold mb-0 text-danger">Both Players Claimed Victory</h6>
+                    <h6 class="fw-bold mb-0 text-danger">Result Disputed</h6>
                 </div>
                 <p class="text-muted small mb-0">
-                    A dispute has been opened. Both players must submit proof below.
-                    An admin will review the evidence and declare the final result.
+                    Both players submitted different results. A dispute has been opened — both must submit evidence below.
+                    An admin will review and declare the final result. The player found to have submitted a false result
+                    will receive a <strong class="text-danger">reputation deduction</strong> once the ranking system launches.
                 </p>
             </div>
         </div>
@@ -353,45 +369,63 @@ else
             {
                 <div class="card border-0 mb-4" style="background:#12122a;border:1px solid #e94560 !important">
                     <div class="card-body p-4">
-                        <h6 class="fw-bold mb-1"><i class="bi bi-flag-fill text-danger me-2"></i>What was the result?</h6>
-                        <p class="text-muted small mb-3">
-                            Both players must declare. If you both agree, payouts are automatic.
-                            If you both claim to have won, an admin will review the evidence.
+                        <h6 class="fw-bold mb-2"><i class="bi bi-flag-fill text-danger me-2"></i>What was the result?</h6>
+                        <p class="text-muted small mb-4">
+                            Both players must pick the same result for the event to settle automatically.
+                            If your choices differ, a <strong class="text-warning">dispute</strong> will be opened.
                         </p>
-                        <div class="row g-3 mb-3">
-                            <div class="col-6">
-                                <div class="card border-2 @(_newDeclareSide == "A" ? "border-success" : "border-secondary") text-center"
-                                     style="background:#0f0f1e;cursor:pointer"
-                                     @onclick='() => _newDeclareSide = "A"'>
-                                    <div class="card-body py-3 @(_newDeclareSide == "A" ? "text-white" : "text-muted")">
-                                        <div class="fw-bold text-success mb-1">@_event.SideA won</div>
-                                        <div class="small">@SideCount("A") entries</div>
-                                        @if (_newDeclareSide == "A") { <i class="bi bi-check-circle-fill text-success mt-2 d-block"></i> }
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-6">
-                                <div class="card border-2 @(_newDeclareSide == "B" ? "border-danger" : "border-secondary") text-center"
-                                     style="background:#0f0f1e;cursor:pointer"
-                                     @onclick='() => _newDeclareSide = "B"'>
-                                    <div class="card-body py-3 @(_newDeclareSide == "B" ? "text-white" : "text-muted")">
-                                        <div class="fw-bold text-danger mb-1">@_event.SideB won</div>
-                                        <div class="small">@SideCount("B") entries</div>
-                                        @if (_newDeclareSide == "B") { <i class="bi bi-check-circle-fill text-danger mt-2 d-block"></i> }
-                                    </div>
-                                </div>
-                            </div>
+
+                        <!-- 3 outcome buttons -->
+                        <div class="d-flex flex-column gap-2 mb-4">
+                            <button class="btn w-100 text-start fw-semibold py-3 px-4"
+                                    style="background:@(_newDeclareSide == "A" ? "rgba(40,167,69,.25)" : "#0f0f1e");border:2px solid @(_newDeclareSide == "A" ? "#28a745" : "#2a2a4a")"
+                                    @onclick='() => _newDeclareSide = "A"'>
+                                <i class="bi bi-trophy-fill me-2 text-success"></i>
+                                <span class="text-success">@_event.SideA Won</span>
+                                @if (_newDeclareSide == "A") { <i class="bi bi-check-circle-fill text-success float-end mt-1"></i> }
+                            </button>
+                            <button class="btn w-100 text-start fw-semibold py-3 px-4"
+                                    style="background:@(_newDeclareSide == "B" ? "rgba(220,53,69,.25)" : "#0f0f1e");border:2px solid @(_newDeclareSide == "B" ? "#dc3545" : "#2a2a4a")"
+                                    @onclick='() => _newDeclareSide = "B"'>
+                                <i class="bi bi-trophy-fill me-2 text-danger"></i>
+                                <span class="text-danger">@_event.SideB Won</span>
+                                @if (_newDeclareSide == "B") { <i class="bi bi-check-circle-fill text-danger float-end mt-1"></i> }
+                            </button>
+                            <button class="btn w-100 text-start fw-semibold py-3 px-4"
+                                    style="background:@(_newDeclareSide == "Draw" ? "rgba(108,117,125,.25)" : "#0f0f1e");border:2px solid @(_newDeclareSide == "Draw" ? "#6c757d" : "#2a2a4a")"
+                                    @onclick='() => _newDeclareSide = "Draw"'>
+                                <i class="bi bi-handshake-fill me-2 text-secondary"></i>
+                                <span class="text-secondary">It's a Draw</span>
+                                @if (_newDeclareSide == "Draw") { <i class="bi bi-check-circle-fill text-secondary float-end mt-1"></i> }
+                            </button>
                         </div>
+
                         @if (!string.IsNullOrEmpty(_declareNewError))
                         {
-                            <div class="alert alert-danger py-2 mb-2">@_declareNewError</div>
+                            <div class="alert alert-danger py-2 mb-3">@_declareNewError</div>
                         }
+
                         @if (!string.IsNullOrEmpty(_newDeclareSide))
                         {
-                            <button class="btn btn-danger w-100 fw-bold" @onclick="SubmitDeclarationAsync" disabled="@_declaringNew">
+                            <!-- Dispute warning notice -->
+                            <div class="alert mb-3 py-2" style="background:rgba(220,53,69,.1);border:1px solid rgba(220,53,69,.4)">
+                                <div class="d-flex gap-2">
+                                    <i class="bi bi-exclamation-triangle-fill text-warning mt-1 flex-shrink-0"></i>
+                                    <div class="small text-muted">
+                                        <strong class="text-warning">Heads up:</strong> If your opponent picks a different result,
+                                        this becomes a <strong>dispute</strong>. You'll both need to submit proof (screenshots, etc.).
+                                        Losing a dispute will result in a <strong class="text-danger">reputation deduction</strong> once the ranking system launches.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button class="btn btn-danger w-100 fw-bold py-2" @onclick="SubmitDeclarationAsync" disabled="@_declaringNew">
                                 @if (_declaringNew) { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
                                 <i class="bi bi-send-fill me-1"></i>
-                                Declare <strong>@(_newDeclareSide == "A" ? _event.SideA : _event.SideB)</strong> Won
+                                @if (_newDeclareSide == "Draw")
+                                { <span>Declare It's a Draw</span> }
+                                else
+                                { <span>Declare <strong>@(_newDeclareSide == "A" ? _event.SideA : _event.SideB)</strong> Won</span> }
                             </button>
                         }
                     </div>
@@ -404,9 +438,17 @@ else
                         <i class="bi bi-hourglass-split text-warning fs-3 mb-2 d-block"></i>
                         <div class="fw-semibold mb-1">Your declaration is in</div>
                         <div class="text-muted small mb-2">
-                            You declared: <strong class="@(_myDecl.DeclaredWinningSide == "A" ? "text-success" : "text-danger")">
-                                @(_myDecl.DeclaredWinningSide == "A" ? _event.SideA : _event.SideB) won
-                            </strong>
+                            You declared:
+                            @if (_myDecl.DeclaredWinningSide == "Draw")
+                            {
+                                <strong class="text-secondary">It's a Draw</strong>
+                            }
+                            else
+                            {
+                                <strong class="@(_myDecl.DeclaredWinningSide == "A" ? "text-success" : "text-danger")">
+                                    @(_myDecl.DeclaredWinningSide == "A" ? _event.SideA : _event.SideB) Won
+                                </strong>
+                            }
                         </div>
                         @if (_oppDecl == null)
                         {
@@ -474,6 +516,10 @@ else
     private bool _declaringNew;
     private string _declareNewError = string.Empty;
 
+    // Reject challenge
+    private bool _rejecting;
+    private string _rejectError = string.Empty;
+
     // Dispute evidence
     private Guid _disputeId;
     private string _evidenceUrl = string.Empty;
@@ -532,6 +578,25 @@ else
         finally
         {
             _accepting = false;
+        }
+    }
+
+    private async Task RejectAsync()
+    {
+        _rejecting = true;
+        _rejectError = string.Empty;
+        try
+        {
+            await EventService.RejectChallengeAsync(EventId, _userId);
+            Nav.NavigateTo("/events");
+        }
+        catch (Exception ex)
+        {
+            _rejectError = ex.Message;
+        }
+        finally
+        {
+            _rejecting = false;
         }
     }
 

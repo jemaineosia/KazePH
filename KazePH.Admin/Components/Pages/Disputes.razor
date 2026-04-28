@@ -1,7 +1,587 @@
 @page "/admin/disputes"
 @rendermode InteractiveServer
+@inject IDisputeService DisputeService
+@inject KazeDbContext Db
+@inject IConfiguration Configuration
+@using KazePH.Core.Enums
+@using KazePH.Core.Models
+@using KazePH.Application.Interfaces
+@using KazePH.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Disputes – KazePH Admin</PageTitle>
 
-<h1>Disputes</h1>
-<p>Coming soon.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-shield-exclamation text-danger me-2"></i>Disputes</h4>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+</div>
+
+<!-- Filter Tabs -->
+<ul class="nav nav-pills mb-4">
+    @foreach (var tab in new[] { "Open", "Under Review", "Resolved", "All" })
+    {
+        <li class="nav-item me-1">
+            <button class="nav-link @(_filter == tab ? "active" : "")" @onclick="() => SetFilter(tab)">
+                @tab
+                @if (tab == "Open" && _openCount > 0)
+                {
+                    <span class="badge bg-danger ms-1">@_openCount</span>
+                }
+                @if (tab == "Under Review" && _underReviewCount > 0)
+                {
+                    <span class="badge bg-warning text-dark ms-1">@_underReviewCount</span>
+                }
+            </button>
+        </li>
+    }
+</ul>
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+    </div>
+}
+else if (_filtered.Count == 0)
+{
+    <div class="text-center text-muted py-5">
+        <i class="bi bi-shield-check fs-2 d-block mb-2"></i>No @(_filter.ToLower()) disputes.
+    </div>
+}
+else
+{
+    <!-- Desktop table -->
+    <div class="table-responsive d-none d-md-block">
+        <table class="table table-dark table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Case</th>
+                    <th>Event</th>
+                    <th>Parties</th>
+                    <th>Stakes</th>
+                    <th>Opened</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var d in _filtered)
+                {
+                    var (partyA, partyB, stakeA, stakeB) = GetParties(d);
+                    <tr style="cursor:pointer" @onclick="() => OpenDetail(d)">
+                        <td>
+                            <div class="fw-semibold small text-muted" style="font-size:0.72rem">@d.Id.ToString()[..8]…</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold small">@(d.Event?.Title ?? "—")</div>
+                            <div class="text-muted" style="font-size:0.72rem">
+                                <span class="badge bg-secondary me-1">@(d.Event?.SideA ?? "A")</span>
+                                <span class="text-muted">vs</span>
+                                <span class="badge bg-secondary ms-1">@(d.Event?.SideB ?? "B")</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="small"><i class="bi bi-person-fill text-primary me-1"></i>@(partyA ?? "—")</div>
+                            <div class="small"><i class="bi bi-person-fill text-warning me-1"></i>@(partyB ?? "—")</div>
+                        </td>
+                        <td class="small">
+                            <div class="text-primary">₱@stakeA.ToString("N2")</div>
+                            <div class="text-warning">₱@stakeB.ToString("N2")</div>
+                        </td>
+                        <td class="text-muted small">@d.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</td>
+                        <td><span class="badge @StatusBadge(d.Status)">@StatusLabel(d.Status)</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" @onclick:stopPropagation="true" @onclick="() => OpenDetail(d)">
+                                <i class="bi bi-folder2-open me-1"></i>View
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Mobile card list -->
+    <div class="d-flex d-md-none flex-column gap-3">
+        @foreach (var d in _filtered)
+        {
+            var (partyA, partyB, stakeA, stakeB) = GetParties(d);
+            <div class="card p-3" style="cursor:pointer" @onclick="() => OpenDetail(d)">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="fw-semibold">@(d.Event?.Title ?? "—")</div>
+                        <div class="text-muted small">@d.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+                    </div>
+                    <span class="badge @StatusBadge(d.Status)">@StatusLabel(d.Status)</span>
+                </div>
+                <div class="small text-muted">
+                    <i class="bi bi-person-fill text-primary me-1"></i>@(partyA ?? "—")
+                    <span class="mx-2">vs</span>
+                    <i class="bi bi-person-fill text-warning me-1"></i>@(partyB ?? "—")
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<!-- ─── Dispute Detail Modal ────────────────────────────────────────────────── -->
+@if (_activeDispute is not null)
+{
+    var ev = _activeDispute.Event;
+    var (partyA, partyB, stakeA, stakeB) = GetParties(_activeDispute);
+    var partyAId = GetPartyAId(_activeDispute);
+    var partyBId = GetPartyBId(_activeDispute);
+    var declarationA = ev?.ResultDeclarations.FirstOrDefault(r => r.DeclaringUserId == partyAId);
+    var declarationB = ev?.ResultDeclarations.FirstOrDefault(r => r.DeclaringUserId == partyBId);
+
+    <div class="modal-backdrop fade show" style="opacity:.7;z-index:1040"></div>
+    <div class="modal d-block" tabindex="-1" style="z-index:1050;overflow-y:auto">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content border-0" style="background:#12122a">
+
+                <!-- Modal Header -->
+                <div class="modal-header border-0" style="background:#0f0f1e">
+                    <div>
+                        <h5 class="modal-title mb-0 fw-bold">
+                            <i class="bi bi-shield-exclamation text-danger me-2"></i>Dispute Case
+                            <span class="text-muted small fw-normal ms-2">@_activeDispute.Id.ToString()[..8]…</span>
+                        </h5>
+                        <div class="text-muted small mt-1">
+                            @(ev?.Title ?? "—") &mdash; Opened @_activeDispute.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge @StatusBadge(_activeDispute.Status) fs-6">@StatusLabel(_activeDispute.Status)</span>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CloseDetail"></button>
+                    </div>
+                </div>
+
+                <div class="modal-body p-0">
+
+                    <!-- ── Parties & Declaration Strip ──────────────────────── -->
+                    <div class="row g-0 border-bottom" style="border-color:#2a2a4a !important">
+
+                        <!-- Party A -->
+                        <div class="col-6 p-3" style="border-right:1px solid #2a2a4a;background:#1a1a2e">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold"
+                                     style="width:36px;height:36px;background:#1e3a5f;color:#6db3f2;font-size:0.85rem">
+                                    @(partyA?[..1].ToUpper() ?? "A")
+                                </div>
+                                <div>
+                                    <div class="fw-semibold text-white">@(partyA ?? "Party A")</div>
+                                    <div class="small" style="color:#9090b0">Playing: <strong class="text-primary">@(ev?.SideA ?? "Side A")</strong></div>
+                                </div>
+                            </div>
+                            <div class="small">
+                                <span style="color:#9090b0">Staked:</span>
+                                <span class="text-success fw-bold ms-1">₱@stakeA.ToString("N2")</span>
+                            </div>
+                            @if (declarationA is not null)
+                            {
+                                <div class="small mt-1">
+                                    <span style="color:#9090b0">Declared:</span>
+                                    <span class="badge ms-1 @(declarationA.DeclaredWinningSide == "A" ? "bg-primary" : declarationA.DeclaredWinningSide == "Draw" ? "bg-secondary" : "bg-danger")">
+                                        @(declarationA.DeclaredWinningSide == "A" ? ev?.SideA : declarationA.DeclaredWinningSide == "Draw" ? "Draw" : ev?.SideB) wins
+                                    </span>
+                                </div>
+                            }
+                        </div>
+
+                        <!-- Party B -->
+                        <div class="col-6 p-3" style="background:#1a1a2e">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold"
+                                     style="width:36px;height:36px;background:#3d1f00;color:#f0a040;font-size:0.85rem">
+                                    @(partyB?[..1].ToUpper() ?? "B")
+                                </div>
+                                <div>
+                                    <div class="fw-semibold text-white">@(partyB ?? "Party B")</div>
+                                    <div class="small" style="color:#9090b0">Playing: <strong class="text-warning">@(ev?.SideB ?? "Side B")</strong></div>
+                                </div>
+                            </div>
+                            <div class="small">
+                                <span style="color:#9090b0">Staked:</span>
+                                <span class="text-success fw-bold ms-1">₱@stakeB.ToString("N2")</span>
+                            </div>
+                            @if (declarationB is not null)
+                            {
+                                <div class="small mt-1">
+                                    <span style="color:#9090b0">Declared:</span>
+                                    <span class="badge ms-1 @(declarationB.DeclaredWinningSide == "B" ? "bg-warning text-dark" : declarationB.DeclaredWinningSide == "Draw" ? "bg-secondary" : "bg-danger")">
+                                        @(declarationB.DeclaredWinningSide == "B" ? ev?.SideB : declarationB.DeclaredWinningSide == "Draw" ? "Draw" : ev?.SideA) wins
+                                    </span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- ── Evidence Thread ─────────────────────────────────── -->
+                    <div class="p-3" style="min-height:300px;max-height:420px;overflow-y:auto;background:#0f0f1e">
+                        @if (!_activeDispute.Evidence.Any())
+                        {
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-chat-dots fs-3 d-block mb-2"></i>
+                                No evidence or messages yet.
+                            </div>
+                        }
+                        else
+                        {
+                            var sortedEvidence = _activeDispute.Evidence.OrderBy(e => e.SubmittedAt).ToList();
+                            @foreach (var entry in sortedEvidence)
+                            {
+                                bool isPartyA = entry.SubmittedByUserId == partyAId;
+                                bool isAdmin  = entry.IsAdminMessage;
+
+                                if (isAdmin)
+                                {
+                                    <div class="d-flex justify-content-center my-3">
+                                        <div class="rounded-3 px-3 py-2 text-center" style="max-width:70%;background:#1e1e38;border:1px solid #e94560">
+                                            <div class="small text-danger fw-bold mb-1">
+                                                <i class="bi bi-shield-fill me-1"></i>KazePH Admin
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(entry.Description))
+                                            {
+                                                <div class="small text-light">@entry.Description</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(entry.EvidenceUrl))
+                                            {
+                                                <a href="@entry.EvidenceUrl" target="_blank" class="btn btn-sm btn-outline-secondary mt-1">
+                                                    <i class="bi bi-paperclip me-1"></i>Attachment
+                                                </a>
+                                            }
+                                            <div class="mt-1" style="font-size:0.7rem;color:#9090b0">
+                                                @entry.SubmittedAt.ToLocalTime().ToString("MMM d, h:mm tt")
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                else if (isPartyA)
+                                {
+                                    <div class="d-flex align-items-start gap-2 mb-3">
+                                        <div class="rounded-circle flex-shrink-0 d-flex align-items-center justify-content-center fw-bold"
+                                             style="width:32px;height:32px;background:#1e3a5f;color:#6db3f2;font-size:0.75rem">
+                                            @(partyA?[..1].ToUpper() ?? "A")
+                                        </div>
+                                        <div style="max-width:65%">
+                                            <div class="small text-primary fw-semibold mb-1">@partyA</div>
+                                            <div class="rounded-3 p-2" style="background:#1a2a3a">
+                                                @if (!string.IsNullOrWhiteSpace(entry.Description))
+                                                {
+                                                    <div class="small text-light">@entry.Description</div>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(entry.EvidenceUrl))
+                                                {
+                                                    <a href="@(_webBaseUrl + entry.EvidenceUrl)" target="_blank" class="d-block mt-1">
+                                                        <div class="d-flex align-items-center gap-1 small text-info">
+                                                            <i class="bi bi-paperclip"></i>Evidence File
+                                                        </div>
+                                                    </a>
+                                                }
+                                            </div>
+                                            <div class="mt-1" style="font-size:0.7rem;color:#9090b0">
+                                                @entry.SubmittedAt.ToLocalTime().ToString("MMM d, h:mm tt")
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="d-flex align-items-start justify-content-end gap-2 mb-3">
+                                        <div style="max-width:65%;text-align:right">
+                                            <div class="small text-warning fw-semibold mb-1">@partyB</div>
+                                            <div class="rounded-3 p-2" style="background:#2a1a00">
+                                                @if (!string.IsNullOrWhiteSpace(entry.Description))
+                                                {
+                                                    <div class="small text-light text-start">@entry.Description</div>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(entry.EvidenceUrl))
+                                                {
+                                                    <a href="@(_webBaseUrl + entry.EvidenceUrl)" target="_blank" class="d-block mt-1">
+                                                        <div class="d-flex align-items-center gap-1 small text-info justify-content-end">
+                                                            Evidence File<i class="bi bi-paperclip"></i>
+                                                        </div>
+                                                    </a>
+                                                }
+                                            </div>
+                                            <div class="mt-1" style="font-size:0.7rem;color:#9090b0">
+                                                @entry.SubmittedAt.ToLocalTime().ToString("MMM d, h:mm tt")
+                                            </div>
+                                        </div>
+                                        <div class="rounded-circle flex-shrink-0 d-flex align-items-center justify-content-center fw-bold"
+                                             style="width:32px;height:32px;background:#3d1f00;color:#f0a040;font-size:0.75rem">
+                                            @(partyB?[..1].ToUpper() ?? "B")
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        }
+                    </div>
+
+                    <!-- ── Admin Compose Box ───────────────────────────────── -->
+                    @if (_activeDispute.Status != DisputeStatus.Resolved)
+                    {
+                        <div class="p-3 border-top border-bottom" style="border-color:#2a2a4a !important;background:#12122a">
+                            <div class="small fw-semibold mb-2" style="color:#c0c0d8">
+                                <i class="bi bi-shield-fill text-danger me-1"></i>Post as KazePH Admin
+                            </div>
+                            <textarea class="form-control form-control-sm mb-2 bg-dark text-light border-secondary" rows="2"
+                                      placeholder="Type a message to both parties…"
+                                      @bind="_adminMessage"></textarea>
+                            <div class="d-flex gap-2 align-items-center">
+                                <input type="url" class="form-control form-control-sm flex-grow-1 bg-dark text-light border-secondary"
+                                       placeholder="Optional attachment URL"
+                                       @bind="_adminAttachmentUrl" />
+                                <button class="btn btn-sm btn-outline-danger flex-shrink-0"
+                                        @onclick="SendAdminMessage"
+                                        disabled="@(string.IsNullOrWhiteSpace(_adminMessage) || _acting)">
+                                    @if (_acting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                    <i class="bi bi-send me-1"></i>Send
+                                </button>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_actionError))
+                            {
+                                <div class="alert alert-danger py-2 small mt-2">@_actionError</div>
+                            }
+                        </div>
+                    }
+
+                    <!-- ── Verdict / Resolve ───────────────────────────────── -->
+                    @if (_activeDispute.Status != DisputeStatus.Resolved)
+                    {
+                        <div class="p-3" style="background:#12122a">
+                            <div class="fw-semibold text-white mb-3">
+                                <i class="bi bi-gavel text-danger me-2"></i>Admin Ruling
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small" style="color:#c0c0d8">Winner</label>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <button class="btn btn-sm @(_verdictSide == "A" ? "btn-primary" : "btn-outline-primary")"
+                                            @onclick='() => _verdictSide = "A"'>
+                                        <i class="bi bi-trophy me-1"></i>@(ev?.SideA ?? "Side A") Wins
+                                    </button>
+                                    <button class="btn btn-sm @(_verdictSide == "B" ? "btn-warning text-dark" : "btn-outline-warning")"
+                                            @onclick='() => _verdictSide = "B"'>
+                                        <i class="bi bi-trophy me-1"></i>@(ev?.SideB ?? "Side B") Wins
+                                    </button>
+                                    <button class="btn btn-sm @(_verdictSide == "Draw" ? "btn-secondary" : "btn-outline-secondary")"
+                                            @onclick='() => _verdictSide = "Draw"'>
+                                        <i class="bi bi-dash-circle me-1"></i>Draw — Refund Both
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small" style="color:#c0c0d8">Verdict Note <span class="text-danger">*</span></label>
+                                <textarea class="form-control bg-dark text-light border-secondary" rows="3"
+                                          placeholder="Explain the ruling. Visible to both parties."
+                                          @bind="_verdictNote"></textarea>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(_resolveError))
+                            {
+                                <div class="alert alert-danger py-2 small">@_resolveError</div>
+                            }
+
+                            <button class="btn btn-danger w-100"
+                                    @onclick="ConfirmResolve"
+                                    disabled="@(string.IsNullOrWhiteSpace(_verdictSide) || string.IsNullOrWhiteSpace(_verdictNote) || _acting)">
+                                @if (_acting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                <i class="bi bi-gavel me-1"></i>Resolve Dispute
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="p-3 border-top" style="border-color:#2a2a4a !important;background:#0f2a0f">
+                            <div class="fw-semibold text-success mb-1">
+                                <i class="bi bi-check-circle me-2"></i>Resolved @_activeDispute.ResolvedAt?.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_activeDispute.AdminNote))
+                            {
+                                <p class="small mb-0 text-light fst-italic">"@_activeDispute.AdminNote"</p>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool    _loading    = true;
+    private bool    _acting     = false;
+    private string  _filter     = "Open";
+    private string  _webBaseUrl = string.Empty;
+
+    private List<Dispute> _all      = new();
+    private List<Dispute> _filtered = new();
+    private int _openCount        = 0;
+    private int _underReviewCount = 0;
+
+    private Dispute? _activeDispute;
+
+    private string _adminMessage       = string.Empty;
+    private string _adminAttachmentUrl = string.Empty;
+    private string _actionError        = string.Empty;
+
+    private string _verdictSide  = string.Empty;
+    private string _verdictNote  = string.Empty;
+    private string _resolveError = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _webBaseUrl = Configuration["WebBaseUrl"] ?? string.Empty;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _activeDispute = null;
+        StateHasChanged();
+
+        _all = await Db.Disputes
+            .Include(d => d.Event)
+                .ThenInclude(e => e!.BetEntries)
+                    .ThenInclude(b => b.User)
+            .Include(d => d.Event)
+                .ThenInclude(e => e!.ResultDeclarations)
+            .Include(d => d.OpenedByUser)
+            .Include(d => d.Evidence)
+                .ThenInclude(e => e.SubmittedByUser)
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync();
+
+        _openCount        = _all.Count(d => d.Status == DisputeStatus.Open);
+        _underReviewCount = _all.Count(d => d.Status == DisputeStatus.UnderReview);
+
+        ApplyFilter();
+        _loading = false;
+    }
+
+    private void SetFilter(string f) { _filter = f; ApplyFilter(); }
+
+    private void ApplyFilter()
+    {
+        _filtered = _filter switch
+        {
+            "Open"         => _all.Where(d => d.Status == DisputeStatus.Open).ToList(),
+            "Under Review" => _all.Where(d => d.Status == DisputeStatus.UnderReview).ToList(),
+            "Resolved"     => _all.Where(d => d.Status == DisputeStatus.Resolved).ToList(),
+            _              => _all
+        };
+    }
+
+    private void OpenDetail(Dispute d)
+    {
+        _activeDispute      = d;
+        _adminMessage       = string.Empty;
+        _adminAttachmentUrl = string.Empty;
+        _actionError        = string.Empty;
+        _verdictSide        = string.Empty;
+        _verdictNote        = string.Empty;
+        _resolveError       = string.Empty;
+    }
+
+    private void CloseDetail() => _activeDispute = null;
+
+    private async Task SendAdminMessage()
+    {
+        if (_activeDispute is null || string.IsNullOrWhiteSpace(_adminMessage)) return;
+        _acting = true;
+        _actionError = string.Empty;
+        try
+        {
+            const string adminId = "admin";
+            await DisputeService.AddAdminMessageAsync(
+                _activeDispute.Id, adminId, _adminMessage.Trim(),
+                string.IsNullOrWhiteSpace(_adminAttachmentUrl) ? null : _adminAttachmentUrl.Trim());
+
+            _adminMessage       = string.Empty;
+            _adminAttachmentUrl = string.Empty;
+            await ReloadActiveAsync();
+        }
+        catch (Exception ex) { _actionError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private async Task ConfirmResolve()
+    {
+        if (_activeDispute is null || string.IsNullOrWhiteSpace(_verdictSide) || string.IsNullOrWhiteSpace(_verdictNote)) return;
+        _acting = true;
+        _resolveError = string.Empty;
+        try
+        {
+            await DisputeService.ResolveDisputeAsync(
+                _activeDispute.Id, _verdictNote.Trim(), _verdictSide);
+            await ReloadActiveAsync();
+            _openCount        = _all.Count(d => d.Status == DisputeStatus.Open);
+            _underReviewCount = _all.Count(d => d.Status == DisputeStatus.UnderReview);
+            ApplyFilter();
+        }
+        catch (Exception ex) { _resolveError = ex.Message; }
+        finally { _acting = false; }
+    }
+
+    private async Task ReloadActiveAsync()
+    {
+        if (_activeDispute is null) return;
+        var id = _activeDispute.Id;
+        _activeDispute = await Db.Disputes
+            .Include(d => d.Event)
+                .ThenInclude(e => e!.BetEntries)
+                    .ThenInclude(b => b.User)
+            .Include(d => d.Event)
+                .ThenInclude(e => e!.ResultDeclarations)
+            .Include(d => d.OpenedByUser)
+            .Include(d => d.Evidence)
+                .ThenInclude(e => e.SubmittedByUser)
+            .FirstOrDefaultAsync(d => d.Id == id);
+
+        // Keep _all in sync so filter counts are accurate
+        var idx = _all.FindIndex(d => d.Id == id);
+        if (idx >= 0 && _activeDispute is not null)
+            _all[idx] = _activeDispute;
+    }
+
+    private (string? PartyA, string? PartyB, decimal StakeA, decimal StakeB) GetParties(Dispute d)
+    {
+        if (d.Event is null) return (null, null, 0, 0);
+        var entryA = d.Event.BetEntries.FirstOrDefault(b => b.Side == "A");
+        var entryB = d.Event.BetEntries.FirstOrDefault(b => b.Side == "B");
+        return (
+            entryA?.User?.Username ?? (entryA is not null ? entryA.UserId[..8] + "…" : null),
+            entryB?.User?.Username ?? (entryB is not null ? entryB.UserId[..8] + "…" : null),
+            entryA?.Amount ?? 0m,
+            entryB?.Amount ?? 0m
+        );
+    }
+
+    private string? GetPartyAId(Dispute d) =>
+        d.Event?.BetEntries.FirstOrDefault(b => b.Side == "A")?.UserId;
+
+    private string? GetPartyBId(Dispute d) =>
+        d.Event?.BetEntries.FirstOrDefault(b => b.Side == "B")?.UserId;
+
+    private static string StatusBadge(DisputeStatus s) => s switch
+    {
+        DisputeStatus.Open        => "bg-danger",
+        DisputeStatus.UnderReview => "bg-warning text-dark",
+        DisputeStatus.Resolved    => "bg-success",
+        _                         => "bg-secondary"
+    };
+
+    private static string StatusLabel(DisputeStatus s) => s switch
+    {
+        DisputeStatus.Open        => "Open",
+        DisputeStatus.UnderReview => "Under Review",
+        DisputeStatus.Resolved    => "Resolved",
+        _                         => s.ToString()
+    };
+}
+

@@ -181,6 +181,93 @@ public class EventServiceTests
             () => svc.AcceptChallengeAsync(ev.Id, intruderId));
     }
 
+    // ── RejectChallengeAsync ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RejectChallengeAsync_RefundsCreator_CancelsEvent()
+    {
+        var (svc, _, db) = CreateSut();
+        const string creatorId     = "creator-1";
+        const string challengedId  = "challenged-1";
+        await SeedWalletAsync(db, creatorId,    available: 1000m);
+        await SeedWalletAsync(db, challengedId, available: 500m);
+
+        var ev = await svc.CreateEventAsync(
+            creatorId, "Direct Challenge", "Desc", DateTime.UtcNow.AddDays(1),
+            EventType.OneVsOne, "A", "B",
+            creatorSide: "A", creatorStake: 500m, opponentStake: 300m,
+            challengedUserId: challengedId);
+
+        await svc.RejectChallengeAsync(ev.Id, challengedId);
+
+        // Event cancelled
+        var updatedEvent = await db.Events.FindAsync(ev.Id);
+        Assert.Equal(EventStatus.Cancelled, updatedEvent!.Status);
+
+        // Creator's locked stake fully returned
+        var cWallet = await db.Wallets.FirstAsync(w => w.UserId == creatorId);
+        Assert.Equal(1000m, cWallet.AvailableBalance);
+        Assert.Equal(0m,    cWallet.LockedBalance);
+    }
+
+    [Fact]
+    public async Task RejectChallengeAsync_Throws_WhenCreatorTriesToRejectOwnChallenge()
+    {
+        var (svc, _, db) = CreateSut();
+        const string creatorId = "creator-1";
+        await SeedWalletAsync(db, creatorId, available: 1000m);
+
+        var ev = await svc.CreateEventAsync(
+            creatorId, "My Challenge", "Desc", DateTime.UtcNow.AddDays(1),
+            EventType.OneVsOne, "A", "B",
+            creatorSide: "A", creatorStake: 200m, opponentStake: 200m);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.RejectChallengeAsync(ev.Id, creatorId));
+    }
+
+    [Fact]
+    public async Task RejectChallengeAsync_Throws_WhenWrongUserTriesToRejectDirectChallenge()
+    {
+        var (svc, _, db) = CreateSut();
+        const string creatorId    = "creator-1";
+        const string targetId     = "target-1";
+        const string intruderId   = "intruder-1";
+        await SeedWalletAsync(db, creatorId,  available: 1000m);
+        await SeedWalletAsync(db, intruderId, available: 500m);
+
+        var ev = await svc.CreateEventAsync(
+            creatorId, "Direct", "Desc", DateTime.UtcNow.AddDays(1),
+            EventType.OneVsOne, "A", "B",
+            creatorSide: "A", creatorStake: 200m, opponentStake: 200m,
+            challengedUserId: targetId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.RejectChallengeAsync(ev.Id, intruderId));
+    }
+
+    [Fact]
+    public async Task RejectChallengeAsync_Throws_WhenEventNotOpen()
+    {
+        var (svc, _, db) = CreateSut();
+        const string creatorId    = "creator-1";
+        const string challengedId = "challenged-1";
+        await SeedWalletAsync(db, creatorId,    available: 1000m);
+        await SeedWalletAsync(db, challengedId, available: 500m);
+
+        var ev = await svc.CreateEventAsync(
+            creatorId, "Challenge", "Desc", DateTime.UtcNow.AddDays(1),
+            EventType.OneVsOne, "A", "B",
+            creatorSide: "A", creatorStake: 200m, opponentStake: 200m,
+            challengedUserId: challengedId);
+
+        // Accept first so it's Active, then try to reject
+        await svc.AcceptChallengeAsync(ev.Id, challengedId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.RejectChallengeAsync(ev.Id, challengedId));
+    }
+
     // ── CancelEventAsync ──────────────────────────────────────────────────────
 
     [Fact]
@@ -296,14 +383,31 @@ public class EventServiceTests
     }
 
     [Fact]
-    public async Task SubmitDeclaration_BothClaimLoss_SettlesDraw()
+    public async Task SubmitDeclaration_DifferentResults_EscalatesToDispute()
     {
         var (svc, _, db) = CreateSut();
         var (eventId, creatorId, opponentId) = await SetupActiveEventAsync(db, svc);
 
-        // Creator declares B wins, opponent declares A wins (both say they lost)
-        await svc.SubmitDeclarationAsync(eventId, creatorId,  "B");
-        await svc.SubmitDeclarationAsync(eventId, opponentId, "A");
+        // Creator says A won, opponent says Draw — any disagreement = dispute
+        await svc.SubmitDeclarationAsync(eventId, creatorId,  "A");
+        await svc.SubmitDeclarationAsync(eventId, opponentId, "Draw");
+
+        var updatedEvent = await db.Events.FindAsync(eventId);
+        Assert.Equal(EventStatus.Disputed, updatedEvent!.Status);
+
+        var dispute = await db.Disputes.FirstOrDefaultAsync(d => d.EventId == eventId);
+        Assert.NotNull(dispute);
+    }
+
+    [Fact]
+    public async Task SubmitDeclaration_BothDeclareDraw_SettlesDraw()
+    {
+        var (svc, _, db) = CreateSut();
+        var (eventId, creatorId, opponentId) = await SetupActiveEventAsync(db, svc);
+
+        // Both click the Draw button
+        await svc.SubmitDeclarationAsync(eventId, creatorId,  "Draw");
+        await svc.SubmitDeclarationAsync(eventId, opponentId, "Draw");
 
         var updatedEvent = await db.Events.FindAsync(eventId);
         Assert.Equal(EventStatus.Completed, updatedEvent!.Status);

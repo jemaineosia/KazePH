@@ -3,6 +3,7 @@ using System;
 using KazePH.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace KazePH.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(KazeDbContext))]
-    partial class KazeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260427115707_MakeDisputeEvidenceUserNullable")]
+    partial class MakeDisputeEvidenceUserNullable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -151,6 +154,7 @@ namespace KazePH.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("SubmittedByUserId")
+                        .IsRequired()
                         .HasColumnType("character varying(450)");
 
                     b.HasKey("Id");
